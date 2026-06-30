@@ -237,7 +237,6 @@
   <PropertyGroup>
     <PreBuildEvent>
     </PreBuildEvent>
-    <PostBuildEvent>
-    </PostBuildEvent>
+    <PostBuildEvent Condition="'$(Platform)'=='x86'">powershell -ExecutionPolicy Bypass -File "$(ProjectDir)SetLAA.ps1" -TargetPath "$(TargetPath)"</PostBuildEvent>
   </PropertyGroup>
 </Project>
