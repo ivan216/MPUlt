@@ -1,50 +1,82 @@
-# Windows image file caches
+# =========================
+# Windows
+# =========================
 Thumbs.db
 ehthumbs.db
-
-# Folder config file
 Desktop.ini
-
-# Recycle Bin used on file shares
 $RECYCLE.BIN/
-
-# Windows Installer files
 *.cab
 *.msi
 *.msm
 *.msp
-
-# Windows shortcuts
 *.lnk
 
 # =========================
-# Operating System Files
+# macOS
 # =========================
-
-# OSX
-# =========================
-
 .DS_Store
 .AppleDouble
 .LSOverride
-
-# Thumbnails
 ._*
-
-# Files that might appear in the root of a volume
 .DocumentRevisions-V100
 .fseventsd
 .Spotlight-V100
 .TemporaryItems
 .Trashes
 .VolumeIcon.icns
-
-# Directories potentially created on remote AFP share
 .AppleDB
 .AppleDesktop
 Network Trash Folder
 Temporary Items
 .apdisk
-*.suo
+
+# =========================
+# Visual Studio / .NET Build
+# =========================
 bin/
 obj/
+[Bb]uild/
+[Rr]elease/
+[Dd]ebug/
+x64/
+x86/
+*.suo
+*.user
+*.userosscache
+*.userprefs
+*.sln.docstates
+*.rsuser
+*.vspscc
+*.vssscc
+*.scc
+*.log
+*.tlog
+*.ilk
+*.obj
+*.iobj
+*.ipdb
+*.pdb
+*.pch
+*.tlb
+*.tli
+*.tlh
+*.tmp
+*.tmp_proj
+*.rsp
+*.pidb
+*.pgc
+*.pgd
+mono_crash.*
+
+# Visual Studio cache directory
+.vs/
+
+# MSTest / NUnit results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+
+# =========================
+# JetBrains Rider / ReSharper
+# =========================
+.idea/
+*.sln.DotSettings.user
