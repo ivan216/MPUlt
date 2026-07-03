@@ -26,15 +26,19 @@ namespace _3dedit {
 
         // ---- Properties for return values ----
         public string PuzzleName {
-            get { return txtName.Text.Trim(); }
+            get { return Sanitize(txtName.Text); }
         }
 
         public string BlockPath {
             get {
-                string t = cmbBlock.Text.Trim();
+                string t = Sanitize(cmbBlock.Text);
                 if (t == "(Root)" || t == "") return "";
                 return t;
             }
+        }
+
+        static string Sanitize(string s) {
+            return s.Trim().Replace(' ', '_');
         }
 
         public string[] DefinitionLines {

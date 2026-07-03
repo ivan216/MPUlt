@@ -215,9 +215,13 @@ namespace _3dedit {
             this.Controls.Add(btnCancel);
         }
 
+        static string Sanitize(string s) {
+            return s.Trim().Replace(' ', '_');
+        }
+
         public string BlockPath {
             get {
-                string t = cmbBlock.Text.Trim();
+                string t = Sanitize(cmbBlock.Text);
                 if (t == "(Root)" || t == "") return "";
                 return t;
             }
