@@ -2,6 +2,7 @@
 using System.Drawing;
 using System.Threading;
 using System.Collections;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Windows.Forms;
 using System.Reflection;
@@ -37,6 +38,11 @@ namespace _3dedit
         private ToolStripMenuItem mi_Undo;
         private ToolStripMenuItem mi_Redo;
         private ToolStripMenuItem puzzleToolStripMenuItem;
+        private ToolStripMenuItem customToolStripMenuItem;
+        private ToolStripMenuItem mi_NewPuzzle;
+        private ToolStripMenuItem mi_DeletePuzzle;
+        private ToolStripMenuItem mi_ReloadPuzzles;
+        private ToolStripSeparator customToolStripSeparator;
         private ToolStripMenuItem mi_FullUndo;
         private ToolStripMenuItem mi_FullScramble;
         private ToolStripMenuItem mi_ScrambleNTurns;
@@ -248,8 +254,13 @@ namespace _3dedit
             this.recalculateToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.optimizeToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStripMenuItem2 = new System.Windows.Forms.ToolStripSeparator();
+            this.customToolStripSeparator = new System.Windows.Forms.ToolStripSeparator();
             this.m_miShowTimer = new System.Windows.Forms.ToolStripMenuItem();
             this.puzzleToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.customToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.mi_NewPuzzle = new System.Windows.Forms.ToolStripMenuItem();
+            this.mi_DeletePuzzle = new System.Windows.Forms.ToolStripMenuItem();
+            this.mi_ReloadPuzzles = new System.Windows.Forms.ToolStripMenuItem();
             this.macroToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.mi_StartRecordig = new System.Windows.Forms.ToolStripMenuItem();
             this.loadMacroFileToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
@@ -746,6 +757,7 @@ namespace _3dedit
             this.fileToolStripMenuItem,
             this.editToolStripMenuItem,
             this.puzzleToolStripMenuItem,
+            this.customToolStripMenuItem,
             this.macroToolStripMenuItem,
             this.helpToolStripMenuItem});
             this.menuStrip1.Location = new System.Drawing.Point(0,0);
@@ -964,7 +976,39 @@ namespace _3dedit
             this.puzzleToolStripMenuItem.Name = "puzzleToolStripMenuItem";
             this.puzzleToolStripMenuItem.Size = new System.Drawing.Size(52,20);
             this.puzzleToolStripMenuItem.Text = "Puzzle";
-            // 
+            //
+            // customToolStripMenuItem
+            //
+            this.customToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
+            this.mi_NewPuzzle,
+            this.mi_DeletePuzzle,
+            this.customToolStripSeparator,
+            this.mi_ReloadPuzzles});
+            this.customToolStripMenuItem.Name = "customToolStripMenuItem";
+            this.customToolStripMenuItem.Size = new System.Drawing.Size(58,20);
+            this.customToolStripMenuItem.Text = "Custom";
+            //
+            // mi_NewPuzzle
+            //
+            this.mi_NewPuzzle.Name = "mi_NewPuzzle";
+            this.mi_NewPuzzle.Size = new System.Drawing.Size(160,22);
+            this.mi_NewPuzzle.Text = "New Puzzle...";
+            this.mi_NewPuzzle.Click += new System.EventHandler(this.mi_NewPuzzle_Click);
+            //
+            // mi_DeletePuzzle
+            //
+            this.mi_DeletePuzzle.Name = "mi_DeletePuzzle";
+            this.mi_DeletePuzzle.Size = new System.Drawing.Size(160,22);
+            this.mi_DeletePuzzle.Text = "Delete or Move...";
+            this.mi_DeletePuzzle.Click += new System.EventHandler(this.mi_DeletePuzzle_Click);
+            //
+            // mi_ReloadPuzzles
+            //
+            this.mi_ReloadPuzzles.Name = "mi_ReloadPuzzles";
+            this.mi_ReloadPuzzles.Size = new System.Drawing.Size(160,22);
+            this.mi_ReloadPuzzles.Text = "Reload from File";
+            this.mi_ReloadPuzzles.Click += new System.EventHandler(this.mi_ReloadPuzzles_Click);
+            //
             // macroToolStripMenuItem
             // 
             this.macroToolStripMenuItem.DropDownItems.AddRange(new System.Windows.Forms.ToolStripItem[] {
@@ -1940,6 +1984,7 @@ namespace _3dedit
         }
 
         bool m_setgeom=false;
+        List<string> m_dupNames=new List<string>();
 
         private void trk_faceShrink_ValueChanged(object sender,EventArgs e) {
             if(m_setgeom) {
@@ -2322,9 +2367,15 @@ namespace _3dedit
 
         void ReadPuzzles(string fn) {
             if(File.Exists(fn)){
-                StreamReader sr=new StreamReader("MPUlt_puzzles.txt");
+                m_dupNames.Clear();
+                StreamReader sr=new StreamReader(fn);
                 PuzzleList=ReadGroup(sr);
                 sr.Close();
+                if(m_dupNames.Count>0) {
+                    string msg="Duplicate puzzle names found (only the first occurrence is used):\r\n";
+                    foreach(string nm in m_dupNames) msg+="  • "+nm+"\r\n";
+                    MessageBox.Show(msg,"Puzzles.txt Warning",MessageBoxButtons.OK,MessageBoxIcon.Warning);
+                }
             } else {
                 PuzzleList=new Hashtable();
                 PuzzleList.Add("Cube4D_3_FT",PuzzleStructure.ExampleDescr);
@@ -2340,7 +2391,11 @@ namespace _3dedit
                 string cmd=ln==null ? null : ln.Split(' ')[0].ToLower();
                 if(cmd==null || cmd=="puzzle" || cmd=="block" || cmd=="endblock") {
                     if(pname!=null) {
-                        res.Add(pname,(string[])lines.ToArray(typeof(string)));
+                        if(!res.ContainsKey(pname)) {
+                            res.Add(pname,(string[])lines.ToArray(typeof(string)));
+                        } else if(!m_dupNames.Contains(pname)) {
+                            m_dupNames.Add(pname);
+                        }
                         pname=null;
                     }
                     if(cmd==null || cmd=="endblock") break;
@@ -2350,7 +2405,9 @@ namespace _3dedit
                     } else if(cmd=="block") {
                         string nm=ln.Split(' ')[1];
                         Hashtable r=ReadGroup(sr);
-                        res.Add(nm,r);
+                        if(!res.ContainsKey(nm)) {
+                            res.Add(nm,r);
+                        }
                     }
                 } else lines.Add(ln);
             }
@@ -2439,5 +2496,106 @@ namespace _3dedit
             }
         }
 
+        // ---- Custom Puzzle menu handlers ----
+
+        private void mi_NewPuzzle_Click(object sender, EventArgs e) {
+            string puzzleFile = FindPuzzleFilePath();
+            if (puzzleFile == null) {
+                MessageBox.Show("Cannot find MPUlt_puzzles.txt", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            using (PuzzleDialog dlg = new PuzzleDialog(PuzzleList, puzzleFile)) {
+                if (dlg.ShowDialog(this) == DialogResult.OK) {
+                    // Reload the puzzle list and refresh menus
+                    RefreshPuzzleMenu();
+                    // If Generate & Save was clicked, load the puzzle
+                    if (dlg.LoadAfterSave && dlg.CreatedStructure != null) {
+                        NewScene(dlg.CreatedStructure);
+                    }
+                }
+            }
+        }
+
+        private void mi_DeletePuzzle_Click(object sender, EventArgs e) {
+            string puzzleFile = FindPuzzleFilePath();
+            if (puzzleFile == null) {
+                MessageBox.Show("Cannot find MPUlt_puzzles.txt", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+            using (PuzzleSelectorDialog dlg = new PuzzleSelectorDialog(PuzzleList, PuzzleSelectorMode.Delete)) {
+                dlg.DeleteRequested += (name, blockPath) => {
+                    if (PuzzleFileUtils.RemovePuzzleFromBlock(puzzleFile, name, blockPath)) {
+                        RefreshPuzzleMenu();
+                    } else {
+                        MessageBox.Show(this, "Failed to delete puzzle \"" + name + "\".",
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
+                };
+                dlg.MoveRequested += (name, sourceBlock, targetBlock) => {
+                    // Get definition from in-memory Hashtable (no file I/O, no global search ambiguity)
+                    string[] defLines = PuzzleFileUtils.GetPuzzleDefinition(PuzzleList, name, sourceBlock);
+                    if (defLines == null) {
+                        MessageBox.Show(this,
+                            string.Format("Cannot find puzzle \"{0}\" in block \"{1}\".", name, sourceBlock),
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    // Check if target block already has a puzzle with the same name
+                    if (PuzzleFileUtils.PuzzleExistsInBlock(PuzzleList, name, targetBlock)) {
+                        var overwrite = MessageBox.Show(this,
+                            string.Format("A puzzle named \"{0}\" already exists in \"{1}\". Overwrite?", name, targetBlock),
+                            "Duplicate Name", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+                        if (overwrite != DialogResult.Yes) return;
+                        // Remove the target block's duplicate first
+                        PuzzleFileUtils.RemovePuzzleFromBlock(puzzleFile, name, targetBlock);
+                    }
+                    // Remove from source block
+                    if (!PuzzleFileUtils.RemovePuzzleFromBlock(puzzleFile, name, sourceBlock)) {
+                        MessageBox.Show(this, "Failed to remove puzzle from source block.",
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    // Add to target block
+                    if (!PuzzleFileUtils.AddPuzzle(puzzleFile, name, defLines, targetBlock)) {
+                        MessageBox.Show(this, "Failed to write puzzle to target block.",
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+                    RefreshPuzzleMenu();
+                    MessageBox.Show(this,
+                        string.Format("Puzzle \"{0}\" moved from \"{1}\" to \"{2}\".", name, sourceBlock, targetBlock),
+                        "Move Complete", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                };
+                dlg.ShowDialog(this);
+            }
+        }
+
+        private void mi_ReloadPuzzles_Click(object sender, EventArgs e) {
+            RefreshPuzzleMenu();
+            MessageBox.Show(this, "Puzzle list reloaded from file.", "Reload", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+
+        void RefreshPuzzleMenu() {
+            string puzzleFile = FindPuzzleFilePath();
+            if (puzzleFile != null && File.Exists(puzzleFile)) {
+                ReadPuzzles(puzzleFile);
+            }
+            // Rebuild the Puzzle menu
+            puzzleToolStripMenuItem.DropDownItems.Clear();
+            puzzleToolStripMenuItem.DropDownItems.AddRange(CreatePuzzleMenu(PuzzleList));
+        }
+
+        string FindPuzzleFilePath() {
+            // Check common locations
+            string[] candidates = {
+                "MPUlt_puzzles.txt",
+                System.IO.Path.Combine(Application.StartupPath, "MPUlt_puzzles.txt"),
+                System.IO.Path.Combine(System.IO.Path.Combine(Application.StartupPath, "config"), "MPUlt_puzzles.txt")
+            };
+            foreach (string c in candidates) {
+                if (File.Exists(c)) return c;
+            }
+            return null;
+        }
     }
 }
