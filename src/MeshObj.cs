@@ -237,7 +237,7 @@ namespace _3dedit {
         internal void InitPuzzle(Puzzle cube) {
             Cube=cube;
             int dim=Cube.Str.Dim;
-            NF=Cube.Str.Faces.Length;
+            NF=Cube.Str.Faces.Count;
             NStk=Cube.Str.NStickers;
             SetColorsArray(null);
             StFaces=new StkMesh[NF];

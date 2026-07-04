@@ -158,15 +158,26 @@ namespace _3dedit
             m_setgeom=false;
             ReadPuzzles("MPUlt_puzzles.txt");
             this.puzzleToolStripMenuItem.DropDownItems.AddRange(CreatePuzzleMenu(PuzzleList));
-            LoadSettings("MPUlt_settings.txt");
+            try {
+                LoadSettings("MPUlt_settings.txt");
+            } catch(Exception ex) {
+                MessageBox.Show("LoadSettings: "+ex.GetType().Name+"\n"+ex.Message+"\n"+ex.StackTrace);
+            }
             m_Timer=new System.Threading.Timer(this.UpdateTime,null,0,117);
 
             if(Macros==null || Macros.FileName==null) {
-                Macros=new CMacroFile(Puz.Str.Name,Puz.Str.Dim);
-                //NewScene();
+                if(Puz != null) {
+                    Macros=new CMacroFile(Puz.Str.Name,Puz.Str.Dim);
+                } else {
+                    Macros=new CMacroFile("Cube4D_3_FT",4);
+                }
             }
- 
-            ApplyGeomSettings();
+
+            try {
+                ApplyGeomSettings();
+            } catch(Exception ex) {
+                MessageBox.Show("ApplyGeomSettings: "+ex.GetType().Name+"\n"+ex.Message+"\n"+ex.StackTrace);
+            }
             m_setgeom=true;
 		}
 
@@ -1357,7 +1368,7 @@ namespace _3dedit
 		#endregion
 
         Puzzle Puz;
-        Hashtable PuzzleList;
+        Hashtable PuzzleList = new Hashtable();
         string m_puzzleName;
         CubeObj CubeView;
         int TRate=500;
@@ -1454,11 +1465,16 @@ namespace _3dedit
             Puz.GetTwistGeom(axis,twist,angle,out twv,out rangle);
 
             int t=1;
+            int animDim = Puz.Str.Dim;
             while(m_runUndo) {
                 t+=50;
                 if(t>=TRate) break;
-                double ra=(rangle*t)/TRate;
-                _twm=PGeom.GetMatrixForTwist(twv,ra);
+                double frac = (double)t / TRate;
+                double[] flatMat = PGeom.GetMatrixForTwist(twv, frac, animDim);
+                _twm = new double[animDim, animDim];
+                for(int ii = 0; ii < animDim; ii++)
+                    for(int jj = 0; jj < animDim; jj++)
+                        _twm[ii, jj] = flatMat[ii * animDim + jj];
                 Puz.SetTwist(axis,mask,_SetStickerMove);
                 RedrawAll();
                 Thread.Sleep(50);
@@ -1520,7 +1536,7 @@ namespace _3dedit
                                     double[] pt=CubeView.FindFace(-x,y,out nf);
                                     if(nf<0) return;
                                     if(Puz.Str.Faces[nf].RefAxis==0) goto case EAction.ActionLRClick;
-                                    if(!Puz.Str.FindTwist(nf,pt,out m_curAx,out m_tw)) return;
+                                    if(!Puz.Str.FindTwist(nf,pt,2,out m_curAx,out m_tw)) return;
                                     NormTwist(ref m_curAx,ref m_tw,ref m_dir,ref m_mask);
                                     StartAnimation(m_curAx,m_tw,m_dir,m_mask);
                                     Puz.Twist(m_curAx,m_tw,m_dir,m_mask);
@@ -1640,7 +1656,7 @@ namespace _3dedit
                             int nf;
                             double[] pt=CubeView.FindFace(-x,y,out nf);
                             if(nf<0) return;
-                            double[,] M=Puz.Str.GetBestMatrix(m.Stickers[0],m.Point,nf,pt);
+                            double[] M=Puz.Str.GetBestMatrix(m.Stickers[0],m.Point,nf,pt);
                             if(M==null) return;
                             Puz.ApplyMacro(m.Code,m.LMacro,M,act==EAction.ActionAltRClick);
                             qch=true;

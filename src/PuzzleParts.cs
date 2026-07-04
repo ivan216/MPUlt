@@ -16,10 +16,12 @@ namespace _3dedit {
         internal int[][] Layers;
         internal PBaseTwist[] Twists;
         internal int NPrimaryTwists;
+        internal List<double[]> SMatrices;  // group matrices that preserve this axis
 
         internal PBaseAxis(double[] dir) {
             Dir=dir;
             FixedMask=0;
+            SMatrices = new List<double[]>();
         }
 
 
@@ -46,30 +48,33 @@ namespace _3dedit {
             FixedMask=0;
         }
 
+        internal void AddSMatrix(double[] G) {
+            SMatrices.Add(G);
+        }
+
         internal void ExpandPrimaryTwists() {
-            const int MaxNTwists=256;
-            NPrimaryTwists=Twists.Length;
-            PBaseTwist[] twst=new PBaseTwist[MaxNTwists];
-            int q=0;
-            foreach(PBaseTwist tw in Twists) twst[q++]=tw;
-            for(int p=0;p<q;p++) {
-                double[] v=twst[p].Dir;
-                for(int i=0;i<q;i++) {
-                    double[] w=PGeom.ApplyTwist(twst[i].Dir,v);
-                    int k;
-                    bool qr;
-                    for(k=0;k<q;k++) {
-                        if(PGeom.TwistsEqual(w,twst[k].Dir,out qr)) break;
+            int dim = Dir.Length;
+            NPrimaryTwists = Twists.Length;
+            List<PBaseTwist> list = new List<PBaseTwist>();
+            // Step 1: add identity-conjugated originals (preserve primary order)
+            for(int ti = 0; ti < NPrimaryTwists; ti++)
+                list.Add(new PBaseTwist(Twists[ti], SMatrices[0], Dir));
+            // Step 2: add unique SMatrices conjugates of each primary twist
+            for(int ti = 0; ti < NPrimaryTwists; ti++) {
+                for(int si = 1; si < SMatrices.Count; si++) {
+                    PBaseTwist ntw = new PBaseTwist(Twists[ti], SMatrices[si], Dir);
+                    bool found = false;
+                    foreach(PBaseTwist t in list) {
+                        bool qr;
+                        if(PGeom.MatrixEqual(ntw.Matr, t.Matr, out qr, dim)) {
+                            found = true;
+                            break;
+                        }
                     }
-                    if(k==q) {
-                        if(q==MaxNTwists) throw new Exception("Too many planes");
-                        twst[q]=new PBaseTwist(w);
-                        q++;
-                    }
+                    if(!found) list.Add(ntw);
                 }
             }
-            Twists=new PBaseTwist[q];
-            for(int i=0;i<q;i++) Twists[i]=twst[i];
+            Twists = list.ToArray();
         }
 
         internal void DebugPrint(TextWriter tw) {
@@ -107,16 +112,97 @@ namespace _3dedit {
             }
         }
 
+        internal void GenerateTwists() {
+            throw new NotImplementedException();
+        }
+
+        internal int FindTwist4D(double[] pt, int type) {
+            int dim = Dir.Length;
+            double[] proj = new double[dim];
+            double l1 = PGeom.DotProd(pt, Dir) / PGeom.DotProd(Dir, Dir);
+            for(int i = 0; i < dim; i++) proj[i] = pt[i] - l1 * Dir[i];
+            double rad = PGeom.VLength(proj);
+            double bestDist = double.MaxValue;
+            int bestTw = 0;
+            double altDist = double.MaxValue;
+            int altTw = 0;
+            for(int j = 0; j < Twists.Length; j++) {
+                PBaseTwist tw = Twists[j];
+                if(tw.NTwist != 0) {
+                    l1 = -PGeom.DotProd(tw.Pole, proj) / rad;
+                    double plen = PGeom.VLength(tw.Pole);
+                    double dist = Math.Sqrt(plen * plen - l1 * l1) / Math.Sqrt(plen);
+                    if(tw.NTwist == type) {
+                        if(dist < bestDist) {
+                            bestTw = (l1 < 0.0) ? (-j - 1) : (j + 1);
+                            bestDist = dist;
+                        }
+                    } else if(dist < altDist) {
+                        altTw = (l1 < 0.0) ? (-j - 1) : (j + 1);
+                        altDist = dist;
+                    }
+                }
+            }
+            if(bestTw == 0 || (altTw != 0 && altDist * 1.1 < bestDist))
+                return altTw;
+            if(bestTw != 0)
+                return bestTw;
+            return 1;
+        }
     }
     class PBaseTwist {
-        internal double[] Dir;  // 2*dim.
+        internal double[] Dir;  // 2*dim (backward compat — twist vector)
         internal int Order;
-        internal int[][] Map;   // sorting of stickers in layers of base axis 
+        internal int[][] Map;   // sorting of stickers in layers of base axis
         internal int[][] InvMap;
+
+        // New fields for N-segment twist support
+        internal int Dim;
+        internal double[] Orig;   // original twist vector (variable length)
+        internal double[] Matr;   // flat matrix form (dim*dim)
+        internal int NTwist;      // number of segments: 2=standard, 1=odd count (pure reflection), 0=even count≠2
+        internal double MaxAngle;
+        internal double[] Pole;   // 4D twist pole
 
         internal PBaseTwist(double[] dir) {
             Dir=dir;
             Order=PGeom.GetOrder(Dir);
+            // Set defaults for backward compat
+            Dim = dir.Length / 2;
+            Orig = dir;
+            Matr = PGeom.CreateMatrixFromTwist(dir, Dim);
+            NTwist = 2;
+            MaxAngle = 1.5707963267948966;
+            Pole = null;
+        }
+
+        internal PBaseTwist(double[] twist, double[] axis) {
+            Init(twist, axis);
+        }
+
+        internal PBaseTwist(PBaseTwist tw, double[] matr, double[] axis) {
+            double[] t = PGeom.ApplyMatrix(matr, tw.Orig, axis.Length);
+            Init(t, axis);
+        }
+
+        private void Init(double[] twist, double[] axis) {
+            Dim = axis.Length;
+            Dir = twist;
+            Orig = twist;
+            Matr = PGeom.CreateMatrixFromTwist(twist, Dim);
+            Order = PGeom.GetOrder(twist, Dim);
+            NTwist = twist.Length / Dim;
+            if(NTwist != 2) NTwist %= 2;
+            // MaxAngle: approximate for fractional twists
+            int num = twist.Length / Dim;
+            MaxAngle = (1 + num % 2 == 1) ? 0.0 : 1.5707963267948966;
+            int pairs = num / 2;
+            for(int i = 0; i < pairs; i++) {
+                double ang = PGeom.Angle(twist, i * 2 * Dim, Dim);
+                if(ang > MaxAngle) MaxAngle = ang;
+            }
+            if(Dim == 4) Pole = PGeom.GetTwistPole(twist, axis);
+            else Pole = null;
         }
         internal int ReAngle(int angle) {
             angle%=Order;
@@ -166,18 +252,18 @@ namespace _3dedit {
         internal byte[,] StickerMask; // NStickers,NCutAxes
         internal PMesh[] StickerMesh;
         internal PMesh FaceMesh;
-        internal ArrayList SMatrices; 
+        internal List<double[]> SMatrices;
 
         internal PBaseFace(double[] pole) {
             Pole=pole;
-            SMatrices=new ArrayList();
-            SMatrices.Add(PGeom.MatrixIdentity(pole.Length));
+            SMatrices = new List<double[]>();
+            SMatrices.Add(PGeom.CreateMatrixIdent(pole.Length));
         }
 
-        internal void SetStickers(LMesh M,CutNetwork CN,PAxis[] Axes,double[][]fctrs) {
+        internal void SetStickers(LMesh M,CutNetwork CN,List<PAxis> Axes,double[][]fctrs) {
             int dim=Pole.Length;
             NCutAxes=0;
-            int nax=Axes.Length;
+            int nax=Axes.Count;
             for(int i=0;i<nax;i++) if(AxisLayers[i]<0) NCutAxes++;
             CutAxes=new int[NCutAxes];
             int d=0;
@@ -280,20 +366,17 @@ _1: ;
             }
         }
 
-        internal void AddSMatrix(double[,] mf,double[,] p) {
-            // Pole*mf=Pole*p => Pole*(mf*p')=Pole
-            
-            double[,] mr=PGeom.MatrixMulInv(mf,p);
-            foreach(double[,] m in SMatrices) {
-                if(PGeom.MatrixEqual(m,mr)) return;
+        internal void AddSMatrix(double[] M) {
+            int dim = (int)Math.Sqrt(M.Length);
+            foreach(double[] m in SMatrices) {
+                bool qr;
+                if(PGeom.MatrixEqual(M, m, out qr, dim)) return;
             }
-            SMatrices.Add(mr);
+            SMatrices.Add(M);
         }
 
         internal void CloseSMatrixSet() {
-            if(Pole.Length==4) {
-                PGeom.CloseMatrixSet(SMatrices);
-            }
+            // No longer needed — Group closure is done in CloseGroup()
         }
     }
 
@@ -317,20 +400,62 @@ _1: ;
 
         internal PAxis(PAxis src,double []tw) {
             Base=src.Base;
-            Dir=PGeom.ApplyTwist(tw,src.Dir);
-            Matrix=PGeom.ApplyTwist(tw,src.Matrix);
+            int dim = src.Dir.Length;
+            Dir = PGeom.ApplyTwistN(tw, src.Dir, dim);
+            Matrix = PGeom.ApplyTwist(tw, src.Matrix);
             int ntw=src.Twists.Length;
             Twists=new double[ntw][];
-            for(int i=0;i<ntw;i++) Twists[i]=PGeom.ApplyTwist(tw,src.Twists[i]);
+            for(int i=0;i<ntw;i++) Twists[i]=PGeom.ApplyTwistN(tw, src.Twists[i], dim);
+        }
+
+        internal PAxis(PBaseAxis bas, double[] matr, int id) {
+            Base = bas;
+            Id = id;
+            int dim = bas.Dir.Length;
+            // Convert flat matrix to 2D for backward compat
+            Matrix = new double[dim, dim];
+            for(int i = 0; i < dim; i++)
+                for(int j = 0; j < dim; j++)
+                    Matrix[i, j] = matr[i * dim + j];
+            Dir = PGeom.ApplyMatrix(matr, bas.Dir, dim);
+            int ntw = bas.Twists.Length;
+            Twists = new double[ntw][];
+            for(int i = 0; i < ntw; i++)
+                Twists[i] = PGeom.ApplyMatrixToTwist(Matrix, bas.Twists[i].Dir);
         }
 
         internal int FindTwist(double[] p,double[,] matr,out bool qrev) {
-            double[] q=PGeom.ApplyMatrixToTwist(matr,p);
+            int dim = Base.Dir.Length;
+            double[] q = PGeom.ApplyMatrixToTwist(matr, p);
             qrev=false;
+            double[] m = PGeom.CreateMatrixFromTwist(q, dim);
             for(int i=0;i<Twists.Length;i++) {
-                if(PGeom.TwistsEqual(q,Twists[i],out qrev)) return i;
+                double[] mi = PGeom.CreateMatrixFromTwist(Twists[i], dim);
+                if(PGeom.MatrixEqual(m, mi, out qrev, dim)) return i;
             }
-            throw new Exception("Can't fing twist");
+            throw new Exception("Can't find twist");
+        }
+
+        internal int FindTwist(PAxis src, int tw, double[] matr, out bool qrev) {
+            int dim = Base.Dir.Length;
+            qrev = false;
+            double[] t = src.Base.Twists[tw].Orig;
+            // Convert 2D matrices to flat for use with flat ApplyMatrix
+            double[] srcFlat = new double[dim * dim];
+            double[] thisFlat = new double[dim * dim];
+            for(int ii = 0; ii < dim; ii++)
+                for(int jj = 0; jj < dim; jj++) {
+                    srcFlat[ii * dim + jj] = src.Matrix[ii, jj];
+                    thisFlat[ii * dim + jj] = this.Matrix[ii, jj];
+                }
+            t = PGeom.ApplyMatrix(srcFlat, t, dim);
+            t = PGeom.ApplyMatrix(matr, t, dim);
+            t = PGeom.ApplyInvMatrix(thisFlat, t, dim);
+            double[] m = PGeom.CreateMatrixFromTwist(t, dim);
+            for(int i = 0; i < this.Base.Twists.Length; i++) {
+                if(PGeom.MatrixEqual(m, this.Base.Twists[i].Matr, out qrev, dim)) return i;
+            }
+            throw new Exception("Can't find twist");
         }
 
         internal void DebugPrint(TextWriter tw) {
@@ -375,8 +500,20 @@ _1: ;
         }
         internal PFace(PFace src,double[] tw) {
             Base=src.Base;
-            Pole=PGeom.ApplyTwist(tw,src.Pole);
-            Matrix=PGeom.ApplyTwist(tw,src.Matrix);
+            int dim = src.Pole.Length;
+            Pole = PGeom.ApplyTwistN(tw, src.Pole, dim);
+            Matrix = PGeom.ApplyTwist(tw, src.Matrix);
+        }
+        internal PFace(PBaseFace bas, double[] matr, int id) {
+            Base = bas;
+            Id = id;
+            Pole = PGeom.ApplyMatrix(matr, bas.Pole, bas.Pole.Length);
+            int dim = bas.Pole.Length;
+            Matrix = new double[dim, dim];
+            for(int i = 0; i < dim; i++)
+                for(int j = 0; j < dim; j++)
+                    Matrix[i, j] = matr[i * dim + j];
+            RefAxis = 0;
         }
 
         internal void DebugPrint(TextWriter tw) {
@@ -420,34 +557,59 @@ _1: ;
     }
 
     class PGeom {
+        internal static int gcd(int a, int b) {
+            while(b != 0) { int t = a % b; a = b; b = t; }
+            return Math.Abs(a);
+        }
+
         internal static int GetOrder(double[] tw) {
-            double la=0,lb=0,pr=0;
-            int d=tw.Length/2;
-            for(int i=0;i<d;i++) {
-                la+=tw[i]*tw[i];
-                lb+=tw[i+d]*tw[i+d];
-                pr+=tw[i]*tw[i+d];
+            return GetOrder(tw, tw.Length / 2);
+        }
+
+        internal static int GetOrder(double[] tw, int dim) {
+            double _;
+            return GetOrder(tw, dim, out _);
+        }
+
+        internal static int GetOrder(double[] tw, int dim, out double maxAng) {
+            int num = tw.Length / dim;       // total segments
+            int order = 1 + num % 2;          // 2 if odd (unpaired mirror), 1 if even
+            maxAng = (order == 2) ? 1.5707963267948966 : 0.0;
+            int pairs = num / 2;              // number of rotation-reflection pairs
+            for(int i = 0; i < pairs; i++) {
+                int idx = i * 2 * dim;
+                double la = 0, lb = 0, pr = 0;
+                for(int j = 0; j < dim; j++) {
+                    la += tw[idx + j] * tw[idx + j];
+                    lb += tw[idx + j + dim] * tw[idx + j + dim];
+                    pr += tw[idx + j] * tw[idx + j + dim];
+                }
+                double a = Math.Acos(Math.Min(1, pr / Math.Sqrt(la * lb)));
+                if(a > maxAng) maxAng = a;
+                if(a != 0) a = Math.PI / a;
+                int r = (int)Math.Round(a);
+                if(r == 0 || Math.Abs(a - r) > 1e-4) throw new Exception("Wrong twist order " + a);
+                int g = gcd(r, order);
+                order = order * r / g;
             }
-            double a=Math.Acos(Math.Min(1,pr/Math.Sqrt(la*lb)));
-            if(a!=0) a=Math.PI/a;
-            int r=(int)Math.Round(a);
-            if(r==0 || Math.Abs(a-r)>1e-4) throw new Exception("Wrong twist order "+a);
-            return r;
+            return order;
         }
 
         internal static double[] ApplyTwist(double[] mov,double[] vec) {
-            int d=mov.Length/2;
-            int d1=vec.Length;
-            double[] res=(double[])vec.Clone();
-            for(int k=0;k<d1;k+=d) {
-                for(int k1=0;k1<=d;k1+=d) {
-                    double sa=0,sb=0;
-                    for(int i=0;i<d;i++) {
-                        sa+=mov[k1+i]*mov[k1+i];
-                        sb+=mov[k1+i]*res[k+i];
+            return ApplyTwistN(mov, vec, mov.Length / 2);
+        }
+
+        internal static double[] ApplyTwistN(double[] mov, double[] vec, int dim) {
+            double[] res = (double[])vec.Clone();
+            for(int k = 0; k < res.Length; k += dim) {
+                for(int s = 0; s < mov.Length; s += dim) {
+                    double sa = 0, sb = 0;
+                    for(int i = 0; i < dim; i++) {
+                        sa += mov[s + i] * mov[s + i];
+                        sb += mov[s + i] * res[k + i];
                     }
-                    double s=2*sb/sa;
-                    for(int i=0;i<d;i++) res[k+i]=mov[k1+i]*s-res[k+i];
+                    double scale = 2 * sb / sa;
+                    for(int i = 0; i < dim; i++) res[k + i] -= mov[s + i] * scale;
                 }
             }
             return res;
@@ -474,8 +636,12 @@ _1: ;
             return true;
         }
         internal static double VLength(double[] v) {
+            return VLength(v, 0, v.Length);
+        }
+
+        internal static double VLength(double[] v, int start, int len) {
             double r=0;
-            for(int i=0;i<v.Length;i++) r+=v[i]*v[i];
+            for(int i=0;i<len;i++) r+=v[start+i]*v[start+i];
             return Math.Sqrt(r);
         }
         static double VLength2(double[] v) {
@@ -500,12 +666,12 @@ _1: ;
         }
 
         internal static double[,] ApplyTwist(double[] tw,double[,] matr) {
-            int dim=tw.Length/2;
+            int dim=matr.GetLength(0);
             double[,] res=new double[dim,dim];
             double[] m=new double[dim];
             for(int i=0;i<dim;i++) {
                 for(int j=0;j<dim;j++) m[j]=matr[i,j];
-                double[] mm=ApplyTwist(tw,m);
+                double[] mm=ApplyTwistN(tw, m, dim);
                 for(int j=0;j<dim;j++) res[i,j]=mm[j];
             }
             return res;
@@ -557,15 +723,28 @@ _1: ;
         }
 
         internal static double[] ApplyMatrixToTwist(double[,] matr,double[] v) {
-            int d=v.Length/2;
-            double[] r=new double[2*d];
-            for(int i=0;i<d;i++) {
-                double h=0;
-                for(int j=0;j<d;j++) h+=matr[j,i]*v[j];
-                r[i]=h;
-                h=0;
-                for(int j=0;j<d;j++) h+=matr[j,i]*v[j+d];
-                r[i+d]=h;
+            int dim=matr.GetLength(0);
+            int nseg=v.Length/dim;
+            double[] r=new double[nseg*dim];
+            for(int s=0;s<nseg;s++) {
+                for(int i=0;i<dim;i++) {
+                    double h=0;
+                    for(int j=0;j<dim;j++) h+=matr[j,i]*v[s*dim+j];
+                    r[s*dim+i]=h;
+                }
+            }
+            return r;
+        }
+
+        internal static double[] ApplyMatrixToTwist(double[] matr, double[] v, int dim) {
+            int nseg = v.Length / dim;
+            double[] r = new double[nseg * dim];
+            for(int s = 0; s < nseg; s++) {
+                for(int i = 0; i < dim; i++) {
+                    double h = 0;
+                    for(int j = 0; j < dim; j++) h += v[s * dim + j] * matr[j * dim + i];
+                    r[s * dim + i] = h;
+                }
             }
             return r;
         }
@@ -650,6 +829,150 @@ _1: ;
                 }
             }
             return true;
+        }
+
+        // ─── Flat-matrix functions (for N-segment generator support) ───
+
+        internal static double[] CreateMatrixIdent(int dim) {
+            double[] m = new double[dim * dim];
+            for(int i = 0; i < dim; i++) m[i * (dim + 1)] = 1.0;
+            return m;
+        }
+
+        internal static double[] CreateMatrixFromTwist(double[] mov, int dim) {
+            double[] m = CreateMatrixIdent(dim);
+            return ApplyTwistN(mov, m, dim);
+        }
+
+        internal static double[] ApplyMatrix(double[] matr, double[] vec, int dim) {
+            int nv = vec.Length;
+            double[] r = new double[nv];
+            for(int i = 0; i < nv; i += dim) {
+                for(int j = 0; j < dim; j++) {
+                    double h = 0;
+                    for(int k = 0; k < dim; k++) h += vec[i + k] * matr[k * dim + j];
+                    r[i + j] = h;
+                }
+            }
+            return r;
+        }
+
+        internal static double[] ApplyInvMatrix(double[] matr, double[] vec, int dim) {
+            int nv = vec.Length;
+            double[] r = new double[nv];
+            for(int i = 0; i < nv; i += dim) {
+                for(int j = 0; j < dim; j++) {
+                    double h = 0;
+                    for(int k = 0; k < dim; k++) h += vec[i + k] * matr[j * dim + k];
+                    r[i + j] = h;
+                }
+            }
+            return r;
+        }
+
+        internal static bool MatrixEqual(double[] m1, double[] m2, out bool qr, int dim) {
+            qr = false;
+            bool qp = true, qm = true;
+            for(int i = 0; i < dim; i++) {
+                for(int j = 0; j < dim; j++) {
+                    double d = m1[i * dim + j];
+                    if(qp && Math.Abs(d - m2[i * dim + j]) > 0.001) qp = false;
+                    if(qm && Math.Abs(d - m2[j * dim + i]) > 0.001) qm = false;
+                    if(!qp && !qm) return false;
+                }
+            }
+            qr = !qp;
+            return true;
+        }
+
+        internal static void CloseMatrixSet(List<double[]> S, int dim) {
+            int count = S.Count;
+            for(int i = 0; i < S.Count; i++) {
+                double[] a = S[i];
+                for(int j = 0; j < count; j++) {
+                    double[] p = ApplyMatrix(S[j], a, dim);
+                    bool found = false;
+                    foreach(double[] m in S) {
+                        bool qr;
+                        if(MatrixEqual(p, m, out qr, dim) && !qr) { found = true; break; }
+                    }
+                    if(!found) S.Add(p);
+                }
+                if(S.Count >= 100000) throw new Exception("Too many matrices");
+            }
+        }
+
+        internal static double Angle(double[] tw, int idx, int dim) {
+            double la = 0, lb = 0, pr = 0;
+            for(int i = 0; i < dim; i++) {
+                la += tw[idx + i] * tw[idx + i];
+                lb += tw[idx + i + dim] * tw[idx + i + dim];
+                pr += tw[idx + i] * tw[idx + i + dim];
+            }
+            return Math.Acos(Math.Min(1.0, pr / Math.Sqrt(la * lb)));
+        }
+
+        internal static double[] GetMatrixForTwist(double[] mtw, double cf, int dim) {
+            double[] tmp = new double[dim];
+            double[] m = CreateMatrixIdent(dim);
+            int num = mtw.Length;
+            int nseg = num / dim;
+            for(int i = 0; i < num - dim; i += 2 * dim) {
+                double ang = Angle(mtw, i, dim);
+                if(nseg % 2 != 0 && Math.Abs(Math.Cos(ang)) < 0.01) {
+                    ApplyMirror(mtw, i, cf, m, dim);
+                    ApplyMirror(mtw, i + dim, cf, m, dim);
+                } else {
+                    double cfac = ang * cf;
+                    double sn = Math.Sin(cfac) / Math.Sin(ang);
+                    double cs = Math.Cos(cfac) - Math.Cos(ang) * sn;
+                    for(int j = 0; j < dim; j++) tmp[j] = mtw[i + dim + j] * sn + mtw[i + j] * cs;
+                    ApplyMirror(mtw, i, 1.0, m, dim);
+                    ApplyMirror(tmp, 0, 1.0, m, dim);
+                }
+            }
+            if(num % (2 * dim) != 0) ApplyMirror(mtw, num - dim, cf, m, dim);
+            return m;
+        }
+
+        internal static void ApplyMirror(double[] rvec, int idx, double cf, double[] vecs, int dim) {
+            double nn = 0;
+            for(int i = 0; i < dim; i++) nn += rvec[idx + i] * rvec[idx + i];
+            for(int j = 0; j < vecs.Length; j += dim) {
+                double dot = 0;
+                for(int k = 0; k < dim; k++) dot += rvec[idx + k] * vecs[j + k];
+                double s = 2 * dot / nn * cf;
+                for(int k = 0; k < dim; k++) vecs[j + k] -= s * rvec[idx + k];
+            }
+        }
+
+        internal static double[] GetTwistPole(double[] Orig, double[] axis) {
+            int num = Orig.Length;
+            int d4 = num / 4;
+            double[] p = new double[4];
+            if(d4 % 2 != 0) {
+                for(int i = 0; i < 4; i++) p[i] = Orig[num - 4 + i];
+            } else {
+                p[0] = det3(Orig, axis, 1, 2, 3);
+                p[1] = det3(Orig, axis, 0, 3, 2);
+                p[2] = det3(Orig, axis, 1, 3, 0);
+                p[3] = det3(Orig, axis, 0, 2, 1);
+            }
+            return p;
+        }
+
+        private static double det3(double[] tw, double[] ax, int a, int b, int c) {
+            return tw[a] * (tw[b + 4] * ax[c] - tw[c + 4] * ax[b])
+                 + tw[b] * (tw[c + 4] * ax[a] - tw[a + 4] * ax[c])
+                 + tw[c] * (tw[a + 4] * ax[b] - tw[b + 4] * ax[a]);
+        }
+
+        internal static double[] InvMatrix(double[] matr, int dim) {
+            double[] r = new double[dim * dim];
+            for(int i = 0; i < dim; i++)
+                for(int j = 0; j < dim; j++)
+                    r[i * dim + j] = matr[j * dim + i];
+            return r;
         }
     }
 }

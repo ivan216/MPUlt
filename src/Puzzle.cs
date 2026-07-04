@@ -68,24 +68,29 @@ namespace _3dedit {
         }
 
         internal void GetTwistGeom(int axis,int twist,int angle,out double[] tvec,out double rangle) {
-            double[] v=Str.Axes[axis].Twists[twist];
-            int h=Str.Axes[axis].Base.Twists[twist].Order;
-            double a0=Math.PI/h;
-            double c0=Math.Cos(a0),s0=Math.Sin(a0);
-            int d=Str.Dim;
-            double a=0,b=0;
-            for(int i=0;i<d;i++) {
-                a+=v[i]*v[i];
-                b+=v[i+d]*v[i+d];
+            PAxis paxis = Str.Axes[axis];
+            PBaseTwist ptw = paxis.Base.Twists[twist];
+            rangle = ptw.MaxAngle;
+            double[] vec = (double[])ptw.Orig.Clone();
+            int dim = Str.Dim;
+            // Apply axis matrix to each dim-sized segment of the twist
+            for(int s = 0; s < vec.Length; s += dim) {
+                double[] seg = new double[dim];
+                Array.Copy(vec, s, seg, 0, dim);
+                seg = PGeom.ApplyMatrix(paxis.Matrix, seg);
+                Array.Copy(seg, 0, vec, s, dim);
             }
-            a=Math.Sqrt(a); b=Math.Sqrt(b);
-            double[]v1=new double[2*d];
-            for(int i=0;i<d;i++) {
-                v1[i]=v[i]/a;
-                v1[i+d]=(v[i+d]/b-v1[i]*c0)/s0;
+            if(angle < 0) {
+                // swap each consecutive pair of segments; if odd count, last one stays
+                for(int s = 0; s < vec.Length - dim; s += 2 * dim) {
+                    for(int i = 0; i < dim; i++) {
+                        double tmp = vec[s + i + dim];
+                        vec[s + i + dim] = vec[s + i];
+                        vec[s + i] = tmp;
+                    }
+                }
             }
-            tvec=v1;
-            rangle=2*a0*angle;
+            tvec = vec;
         }
 
         internal void Twist(int axis,int twist,int angle,int mask) {
@@ -291,9 +296,9 @@ namespace _3dedit {
         int[] AxisMap;
         int[][] TwistMap;
 
-        internal void ApplyMacro(long[] code,int lcode,double[,] matr,bool qrev) {
-            if(AxisMap==null) AxisMap=new int[Str.Axes.Length];
-            if(TwistMap==null) TwistMap=new int[Str.Axes.Length][];
+        internal void ApplyMacro(long[] code,int lcode,double[] matr,bool qrev) {
+            if(AxisMap==null) AxisMap=new int[Str.Axes.Count];
+            if(TwistMap==null) TwistMap=new int[Str.Axes.Count][];
             WriteCode(START_MACRO);
             if(qrev){
                 for(int i=lcode;--i>=0;){
@@ -314,7 +319,7 @@ namespace _3dedit {
                 }
         }
 
-        void MakeMacroStep(long code,double[,] matr,bool qrev) {
+        void MakeMacroStep(long code,double[] matr,bool qrev) {
             int ax,tw,an,ms;
             UnpackCode(code,out ax,out tw,out an,out ms);
             PAxis A=Str.Axes[ax];
@@ -328,12 +333,12 @@ namespace _3dedit {
             }
             ax1--;
             PAxis A1=Str.Axes[ax1];
-            if(TwistMap[ax]==null) TwistMap[ax]=new int[A1.Twists.Length];
+            if(TwistMap[ax]==null) TwistMap[ax]=new int[A1.Base.Twists.Length];
             int tw1=TwistMap[ax][tw];
             if(tw1==0) {
-                bool qrev1;
-                tw1=A1.FindTwist(A.Twists[tw],matr,out qrev1);
-                tw1=qrev1 ? -1-tw1 : 1+tw1;
+                bool rev;
+                tw1 = A1.FindTwist(A, tw, matr, out rev);
+                tw1 = rev ? -1 - tw1 : 1 + tw1;
                 TwistMap[ax][tw]=tw1;
             }
             if(tw1<0) {
@@ -363,13 +368,14 @@ namespace _3dedit {
                 StreamWriter sw=new StreamWriter(fn);
                 sw.NewLine="\r\n";
                 sw.WriteLine("MPUltimate v1 {0} {1} {2} {3}",Str.Name,LSeq,LShuffle,Ptr);
-                string[] descr=Str.GetDescription();
+                string[] descr = (Str.SourceCode != null && Str.SourceCode.Length > 0)
+                    ? Str.SourceCode : Str.GetDescription();
                 sw.WriteLine("Puzzle {0}",Str.Name);
                 foreach(string s in descr) sw.WriteLine(s);
                 sw.WriteLine("EndPuzzle");
 
                 // application-specific code
-                int nf=Str.Faces.Length;
+                int nf=Str.Faces.Count;
                 int nstk=Str.NStickers;
                 int lb=nf<36 ? 1 : nf<1296 ? 2 : 3;
                 int ll=256/lb;
@@ -561,7 +567,7 @@ namespace _3dedit {
 
         internal void Scramble(int nt) {
             Reset();
-            if(nt<0) nt=40*Str.Axes.Length;
+            if(nt<0) nt=40*Str.Axes.Count;
 
             uint seed=(uint)(DateTime.Now.Ticks/10000000);
             int cc=0;
@@ -569,7 +575,7 @@ namespace _3dedit {
                 seed=(seed*0x1010005+1);
                 long s=seed;
 
-                s*=Str.Axes.Length;
+                s*=Str.Axes.Count;
                 int ax=(int)(s>>32);
                 s=(uint)s;
                 s*=Str.Axes[ax].Twists.Length;

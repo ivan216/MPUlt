@@ -11,19 +11,22 @@ namespace _3dedit {
         const int MaxNVert=14400,MaxNAxes=1320;
 
         internal string Name;
+        internal string[] SourceCode;
         internal int Dim;
         internal PBaseAxis[] BaseAxes;
         internal PBaseFace[] BaseFaces;
-        internal PAxis[] Axes;
-        internal PFace[] Faces;
+        internal List<PAxis> Axes;
+        internal List<PFace> Faces;
         internal int NStickers;
         internal bool QSimplified;
 
-        double[][] Group;
+        List<double[]> Group;  // flat matrices (dim*dim), for expansion; [0] = identity
 
         internal PuzzleStructure(string name,string[] def) {
             Name=name;
+            SourceCode=(string[])def.Clone();
             FillFromStrings(def);
+            CloseGroup();
             ExpandAxes();  // and set ID
             ExpandFaces();  // and set ID
             CutFaces();   // and set cutaxes for all faces
@@ -32,66 +35,59 @@ namespace _3dedit {
             CreateTwistMaps();
         }
 
+        private void CloseGroup() {
+            PGeom.CloseMatrixSet(Group, Dim);
+        }
+
         private void ExpandAxes() {
-            int q=BaseAxes.Length;
-            PAxis[] CAxes=new PAxis[MaxNAxes];
-            for(int i=0;i<q;i++) {
-                PBaseAxis ax=BaseAxes[i];
-                ax.Id=i;
-                ax.ExpandPrimaryTwists();
-                CAxes[i]=new PAxis(ax); // matrix=id
-            }
-            for(int p=0;p<q;p++) {
-                double[] R=CAxes[p].Dir;
-                foreach(double []G in Group) {
-                    double[] v=PGeom.ApplyTwist(G,R);
-                    int j;
-                    bool qr;
-                    for(j=0;j<q;j++) if(PGeom.AxisEqual(v,CAxes[j].Dir,out qr)) break;
-                    if(j==q) {
-                        if(q==MaxNAxes) throw new Exception("Too many axes");
-                        CAxes[q]=new PAxis(CAxes[p],G);
-                        q++;
+            Axes = new List<PAxis>();
+            int nax = BaseAxes.Length;
+            for(int b = 0; b < nax; b++) {
+                PBaseAxis bas = BaseAxes[b];
+                bas.Id = b;
+                PAxis first = null;
+                foreach(double[] Gmat in Group) {
+                    double[] dir = PGeom.ApplyMatrix(Gmat, bas.Dir, Dim);
+                    bool found = false;
+                    foreach(PAxis ax in Axes) {
+                        bool qr;
+                        if(PGeom.AxisEqual(dir, ax.Dir, out qr)) {
+                            if(!qr && ax == first) bas.AddSMatrix(Gmat);
+                            found = true; break;
+                        }
+                    }
+                    if(!found) {
+                        PAxis nax2 = new PAxis(bas, Gmat, Axes.Count);
+                        if(first == null) { first = nax2; bas.AddSMatrix(Gmat); }
+                        Axes.Add(nax2);
                     }
                 }
-            }
-            Axes=new PAxis[q];
-            for(int i=0;i<q;i++) {
-                Axes[i]=CAxes[i];
-                Axes[i].Id=i;
+                bas.ExpandPrimaryTwists();
             }
         }
 
         private void ExpandFaces() {
-            PFace[] CFaces=new PFace[MaxNVert];
-            int NRefl=Group.Length;
-            int p,q=BaseFaces.Length;
-            for(int i=0;i<q;i++) {
-                BaseFaces[i].Id=i;
-                CFaces[i]=new PFace(BaseFaces[i]);
-            }
-            for(p=0;p<q;p++) {
-                foreach(double []G in Group) {
-                    double[] v=PGeom.ApplyTwist(G,CFaces[p].Pole);
-                    int j;
-                    for(j=0;j<q;j++) if(PGeom.VertEqual(v,CFaces[j].Pole)) {
-                        double[,] mf=PGeom.ApplyTwist(G,CFaces[p].Matrix);
-                        CFaces[p].Base.AddSMatrix(mf,CFaces[j].Matrix);
-                        break;
+            Faces = new List<PFace>();
+            int id = 0;
+            foreach(PBaseFace BF in BaseFaces) {
+                BF.Id = id;
+                PFace first = null;
+                foreach(double[] Gmat in Group) {
+                    double[] v = PGeom.ApplyMatrix(Gmat, BF.Pole, Dim);
+                    bool found = false;
+                    foreach(PFace f in Faces) {
+                        if(PGeom.VertEqual(v, f.Pole)) {
+                            if(f == first) BF.AddSMatrix(Gmat);
+                            found = true; break;
+                        }
                     }
-                    if(j==q) {
-                        if(q==MaxNVert) throw new Exception("Too many vertices");
-                        CFaces[q]=new PFace(CFaces[p],G);
-                        q++;
+                    if(!found) {
+                        PFace nf = new PFace(BF, Gmat, id++);
+                        if(first == null) { first = nf; BF.AddSMatrix(Gmat); }
+                        Faces.Add(nf);
                     }
                 }
             }
-            Faces=new PFace[q];
-            for(int i=0;i<q;i++) {
-                Faces[i]=CFaces[i];
-                Faces[i].Id=i;
-            }
-            foreach(PBaseFace BF in BaseFaces) BF.CloseSMatrixSet();
         }
 
         private void CutFaces() {
@@ -128,8 +124,8 @@ namespace _3dedit {
                 CutNetwork CN=new CutNetwork(face,Dim,opgen);
                 double[][] fctrs=null;
                 if(QSimplified) fctrs=CN.GetCtrs();
-                F.AxisLayers=new int[Axes.Length];
-                for(int u=0;u<Axes.Length;u++){
+                F.AxisLayers=new int[Axes.Count];
+                for(int u=0;u<Axes.Count;u++){
                     PAxis Ax=Axes[u];
                     double[] D=Ax.Dir;
                     double lD=PGeom.Dist2(D,new double[Dim]);
@@ -211,7 +207,7 @@ namespace _3dedit {
                     }
                 }
             }
-            PermByMatr perm=new PermByMatr(Axes.Length,Faces.Length);
+            PermByMatr perm=new PermByMatr(Axes.Count,Faces.Count);
             foreach(PAxis Ax in Axes) {
                 Ax.Layers=ConvertStickersFromLayers(Ax.Base,Ax.Matrix,perm);
             }
@@ -228,10 +224,10 @@ namespace _3dedit {
         }
 
         private int[][] ConvertStickersFromLayers(PBaseAxis Ax,double[,] matr,PermByMatr P) {
-            for(int i=0;i<Axes.Length;i++) {
+            for(int i=0;i<Axes.Count;i++) {
                 P.CvAxes[i]=FindAxis(Axes[i].Dir,matr);
             }
-            for(int i=0;i<Faces.Length;i++) P.CvFaces[i]=FindFace(Faces[i].Pole,matr);
+            for(int i=0;i<Faces.Count;i++) P.CvFaces[i]=FindFace(Faces[i].Pole,matr);
 
             int[][] res=new int[Ax.NLayers][];
             for(int i=0;i<Ax.NLayers;i++) {
@@ -243,7 +239,7 @@ namespace _3dedit {
                     for(int j=0;j<rres.Length;j++) {
                         int h=rres[j];
                         bool cf=false;
-                        while(f0<Faces.Length-1 && h>=Faces[f0+1].FirstSticker) { f0++; cf=true; }
+                        while(f0<Faces.Count-1 && h>=Faces[f0+1].FirstSticker) { f0++; cf=true; }
                         if(cf) {
                             f1=P.CvFaces[f0];
                             nca=Faces[f0].Base.NCutAxes;
@@ -279,23 +275,52 @@ namespace _3dedit {
         }
 
         private void CreateTwistMaps() {
-            PermByMatr perm=new PermByMatr(Axes.Length,Faces.Length);
+            PermByMatr perm=new PermByMatr(Axes.Count,Faces.Count);
             foreach(PBaseAxis Ax in BaseAxes) {
-                foreach(PBaseTwist tw in Ax.Twists) {
+                for(int ti = 0; ti < Ax.Twists.Length; ti++) {
+                    PBaseTwist tw = Ax.Twists[ti];
                     double[,] matr=PGeom.ApplyTwist(tw.Dir,PGeom.MatrixIdentity(Dim));
-                    int[][] R=ConvertStickersFromLayers(Ax,matr,perm);
-                    int[][] R1=new int[Ax.NLayers][];
-                    for(int i=0;i<Ax.NLayers;i++) {
-                        if(R[i]!=null) {
-                            R1[i]=new int[R[i].Length];
-                            for(int j=0;j<R[i].Length;j++) {
-                                int h=Array.BinarySearch<int>(Ax.Layers[i],R[i][j]);
-                                if(h<0) throw new Exception("Can't find sticker image in twist");
-                                R[i][j]=h; R1[i][h]=j;
+                    // DEBUG: log twist info before the conversion
+                    try {
+                        int[][] R=ConvertStickersFromLayers(Ax,matr,perm);
+                        int[][] R1=new int[Ax.NLayers][];
+                        for(int i=0;i<Ax.NLayers;i++) {
+                            if(R[i]!=null) {
+                                R1[i]=new int[R[i].Length];
+                                for(int j=0;j<R[i].Length;j++) {
+                                    int h=Array.BinarySearch<int>(Ax.Layers[i],R[i][j]);
+                                    if(h<0) {
+                                        // Find which face sticker R[i][j] belongs to
+                                        int debugFace = -1, debugFirst = -1, debugLast = -1;
+                                        for(int ff = 0; ff < Faces.Count; ff++) {
+                                            if(R[i][j] >= Faces[ff].FirstSticker &&
+                                               R[i][j] < Faces[ff].FirstSticker + Faces[ff].Base.NStickers) {
+                                                debugFace = ff; debugFirst = Faces[ff].FirstSticker;
+                                                debugLast = Faces[ff].FirstSticker + Faces[ff].Base.NStickers - 1;
+                                                break;
+                                            }
+                                        }
+                                        throw new Exception(
+                                            "Can't find sticker " + R[i][j] + " in Ax.Layers[" + i + "] " +
+                                            "(axis " + Ax.Id + ", twist " + ti + "/" + Ax.Twists.Length +
+                                            ", NTwist=" + tw.NTwist + ", Dir=" + tw.Dir.Length + "/" + Dim +
+                                            ", face=" + debugFace + " [" + debugFirst + "-" + debugLast + "])");
+                                    }
+                                    R[i][j]=h; R1[i][h]=j;
+                                }
                             }
                         }
+                        tw.Map=R; tw.InvMap=R1;
+                    } catch(Exception ex) {
+                        // Also log the full twist vector and matrix
+                        string vecStr = "";
+                        for(int vv = 0; vv < tw.Dir.Length; vv++) vecStr += tw.Dir[vv].ToString("F3") + ",";
+                        throw new Exception(ex.Message + "\nTwist vec: [" + vecStr + "]\n" +
+                            "Matr[0]=" + matr[0,0]+","+matr[0,1]+","+matr[0,2]+","+matr[0,3] + " | " +
+                            "Matr[1]=" + matr[1,0]+","+matr[1,1]+","+matr[1,2]+","+matr[1,3] + " | " +
+                            "Matr[2]=" + matr[2,0]+","+matr[2,1]+","+matr[2,2]+","+matr[2,3] + " | " +
+                            "Matr[3]=" + matr[3,0]+","+matr[3,1]+","+matr[3,2]+","+matr[3,3]);
                     }
-                    tw.Map=R; tw.InvMap=R1;
                 }
             }
         }
@@ -334,30 +359,31 @@ namespace _3dedit {
                             nv=str.Length-1;
                             BaseFaces=new PBaseFace[nv];
                             for(int i=0;i<nv;i++) {
-                                BaseFaces[i]=new PBaseFace(GetVector(str[i+1],Dim));
+                                BaseFaces[i]=new PBaseFace(GetVector(str[i+1]));
                             }
                             break;
                         case 3:
                             if(cmd=="simplified") { QSimplified=true; state--; break; }
                             if(cmd!="group") throw new Exception("'Group' required");
                             nv=str.Length-1;
-                            Group=new double[nv][];
+                            Group = new List<double[]>();
+                            Group.Add(PGeom.CreateMatrixIdent(Dim));
                             for(int i=0;i<nv;i++) {
-                                Group[i]=GetVector(str[i+1],2*Dim);
-                                PGeom.GetOrder(Group[i]);
+                                double[] vec = GetVector(str[i+1]);
+                                Group.Add(PGeom.CreateMatrixFromTwist(vec, Dim));
                             }
                             if(naxis==0) state=-2;
                             break;
                         case 4:
                             if(cmd!="axis") throw new Exception("'Axis' required");
-                            ax=new PBaseAxis(GetVector(str[1],Dim));
+                            ax=new PBaseAxis(GetVector(str[1]));
                             break;
                         case 5:
                             if(cmd!="twists") throw new Exception("'Twists' required");
                             nv=str.Length-1;
                             ax.Twists=new PBaseTwist[nv];
                             for(int i=0;i<nv;i++) {
-                                ax.Twists[i]=new PBaseTwist(GetVector(str[i+1],2*Dim));
+                                ax.Twists[i]=new PBaseTwist(GetVector(str[i+1]), ax.Dir);
                             }
                             break;
                         case 6:
@@ -388,10 +414,10 @@ namespace _3dedit {
             }
         }
 
-        static double[] GetVector(string s,int dim) {
+        static double[] GetVector(string s) {
             string[] str=s.Split(',','/','>');
-            double[] res=new double[dim];
-            for(int i=0;i<dim;i++) res[i]=double.Parse(str[i],CultureInfo.InvariantCulture);
+            double[] res=new double[str.Length];
+            for(int i=0;i<str.Length;i++) res[i]=double.Parse(str[i],CultureInfo.InvariantCulture);
             return res;
         }
 
@@ -431,6 +457,9 @@ namespace _3dedit {
         }
 
         internal string[] GetDescription() {
+            // Use SourceCode when available (preserves original text)
+            if(SourceCode != null && SourceCode.Length > 0)
+                return (string[])SourceCode.Clone();
             ArrayList arr=new ArrayList();
             arr.Add("Dim "+Dim);
             arr.Add("NAxis "+BaseAxes.Length);
@@ -440,7 +469,11 @@ namespace _3dedit {
             arr.Add(sf);
             if(QSimplified) arr.Add("Simplified");
             sf="Group";
-            foreach(double[] G in Group) sf+=" "+Twist2Text(G);
+            // Group stores flat matrices; reconstruct by converting back to twist vectors
+            // Skip [0]=identity, reconstruct twist vectors from matrices
+            for(int i = 1; i < Group.Count; i++) {
+                sf += " [" + i + "x" + Group[i].Length + "]";
+            }
             arr.Add(sf);
             foreach(PBaseAxis Ax in BaseAxes) {
                 arr.Add("Axis "+Vector2Text(Ax.Dir));
@@ -456,12 +489,13 @@ namespace _3dedit {
         }
 
         private string Twist2Text(double[] G) {
-            string h="";
-            int d=G.Length/2;
-            for(int i=0;i<2*d;i++) {
-                if(i==d) h+="/";
-                else if(i!=0) h+=",";
-                h+=G[i].ToString("F12",CultureInfo.InvariantCulture);
+            string h = "";
+            int dim = (Group != null && Group.Count > 0) ? Dim : G.Length / 2;
+            // Use Dim to determine segment boundaries
+            for(int i = 0; i < G.Length; i++) {
+                if(i != 0 && i % Dim == 0) h += "/";
+                else if(i != 0) h += ",";
+                h += G[i].ToString("F12", CultureInfo.InvariantCulture);
             }
             return h;
         }
@@ -493,6 +527,10 @@ namespace _3dedit {
             dir=PGeom.ApplyMatrix(matr,dir);
             return FindAxis(dir);
         }
+        internal int FindAxis(double[] dir, double[] matr) {
+            dir = PGeom.ApplyMatrix(matr, dir, Dim);
+            return FindAxis(dir);
+        }
         private int FindAxisInv(double[] dir,double[,] matr) {
             dir=PGeom.ApplyInvMatrix(matr,dir);
             return FindAxis(dir);
@@ -521,6 +559,15 @@ namespace _3dedit {
             return r0;
         }
 
+        public int FindStickerAndFace(int st, out int relStk) {
+            int num = 1;
+            while(num < Faces.Count && st >= Faces[num].FirstSticker) num++;
+            num--;
+            relStk = st - Faces[num].FirstSticker;
+            if(relStk >= Faces[num].Base.NStickers) num = -1;
+            return num;
+        }
+
         internal bool FindTwist(int nf,double[] pt,out int ax,out int tw) { // 4D only
             ax=Faces[nf].RefAxis;
             tw=0;
@@ -534,29 +581,134 @@ namespace _3dedit {
             double[] p=new double[4];
             for(int i=0;i<Axes[iax].Twists.Length;i++) {
                 double[] u=Axes[iax].Twists[i];
-                p[0]=actr[1]*(u[2]*u[7]-u[3]*u[6])+actr[2]*(u[3]*u[5]-u[1]*u[7])+actr[3]*(u[1]*u[6]-u[2]*u[5]);
-                p[1]=actr[0]*(u[3]*u[6]-u[2]*u[7])+actr[2]*(u[0]*u[7]-u[3]*u[4])+actr[3]*(u[2]*u[4]-u[0]*u[6]);
-                p[2]=actr[0]*(u[1]*u[7]-u[3]*u[5])+actr[1]*(u[3]*u[4]-u[0]*u[7])+actr[3]*(u[0]*u[5]-u[1]*u[4]);
-                p[3]=actr[0]*(u[2]*u[5]-u[1]*u[6])+actr[1]*(u[0]*u[6]-u[2]*u[4])+actr[2]*(u[1]*u[4]-u[0]*u[5]);
-                l1=-PGeom.DotProd(p,rtw)/Math.Sqrt(PGeom.DotProd(p,p));
-                if(l1<-tbest) {
-                    tbest=-l1; tw=-i-1;
-                }
-                if(l1>tbest) {
-                    tbest=l1; tw=i+1;
+                if(u.Length >= 2 * Dim) {
+                    p[0]=actr[1]*(u[2]*u[7]-u[3]*u[6])+actr[2]*(u[3]*u[5]-u[1]*u[7])+actr[3]*(u[1]*u[6]-u[2]*u[5]);
+                    p[1]=actr[0]*(u[3]*u[6]-u[2]*u[7])+actr[2]*(u[0]*u[7]-u[3]*u[4])+actr[3]*(u[2]*u[4]-u[0]*u[6]);
+                    p[2]=actr[0]*(u[1]*u[7]-u[3]*u[5])+actr[1]*(u[3]*u[4]-u[0]*u[7])+actr[3]*(u[0]*u[5]-u[1]*u[4]);
+                    p[3]=actr[0]*(u[2]*u[5]-u[1]*u[6])+actr[1]*(u[0]*u[6]-u[2]*u[4])+actr[2]*(u[1]*u[4]-u[0]*u[5]);
+                    double sc=-PGeom.DotProd(p,rtw)/Math.Sqrt(PGeom.DotProd(p,p));
+                    if(sc<-tbest) { tbest=-sc; tw=-i-1; }
+                    if(sc>tbest) { tbest=sc; tw=i+1; }
+                } else {
+                    double norm = Math.Sqrt(PGeom.DotProd(u, u));
+                    if(norm < 1e-10) continue;
+                    double sc = PGeom.DotProd(u, rtw) / norm;
+                    if(sc < -tbest) { tbest=-sc; tw=-i-1; }
+                    if(sc > tbest) { tbest=sc; tw=i+1; }
                 }
             }
-            return true;
+            if(tw == 0 && Axes[iax].Twists.Length > 0) tw = 1;
+            return tw != 0;
         }
 
+        internal bool FindTwist(int nf, double[] pt, int type, out int ax, out int tw) {
+            ax = Faces[nf].RefAxis;
+            tw = 0;
+            if(ax == 0) return false;
+            int idx = Math.Abs(ax) - 1;
+            PAxis axObj = Axes[idx];
+            double[] pt2 = PGeom.ApplyInvMatrix(axObj.Matrix, pt);
+            tw = axObj.Base.FindTwist4D(pt2, type);
+            return tw != 0;
+        }
+
+        private bool CheckGrpInv(double[] G, double[] m) {
+            double[] p = PGeom.ApplyMatrix(G, m, Dim);
+            return PGeom.VertEqual(m, p);
+        }
+
+        internal int CheckMacroAnchor(int[] stkseq, int lstkseq, short[] field) {
+            int relStk;
+            int fi = FindStickerAndFace(stkseq[0], out relStk);
+            PFace pf = Faces[fi];
+            PBaseFace bf = pf.Base;
+            List<double[]> candidates = new List<double[]>();
+            foreach(double[] G in bf.SMatrices) {
+                bool ok = true;
+                for(int i = 0; i < lstkseq; i++) {
+                    int s = stkseq[i] - pf.FirstSticker;
+                    if(!CheckGrpInv(G, bf.StickerMesh[s].Ctr)) { ok = false; break; }
+                }
+                if(ok) candidates.Add(G);
+            }
+            for(int j = 0; j < bf.NStickers; j++)
+                field[j + pf.FirstSticker] &= 0x7fff;
+            if(candidates.Count == 1) return 2;
+            for(int k = 0; k < bf.NStickers; k++) {
+                bool varies = false;
+                foreach(double[] G in candidates) {
+                    if(!CheckGrpInv(G, bf.StickerMesh[k].Ctr)) { varies = true; break; }
+                }
+                if(varies) field[k + pf.FirstSticker] |= unchecked((short)0x8000);
+            }
+            return 0;
+        }
+
+        internal int CheckMacroStart(int[] stkseq, int lstkseq, int[] macro, int mlen, short[] field, out double[] matr) {
+            matr = null;
+            int relStk1, relStk2;
+            int fi1 = FindStickerAndFace(macro[0], out relStk1);
+            PFace pf1 = Faces[fi1];
+            PBaseFace bf = pf1.Base;
+            int fi2 = FindStickerAndFace(stkseq[0], out relStk2);
+            PFace pf2 = Faces[fi2];
+            if(pf2.Base != bf) return 0;
+            int count = 0;
+            double[] bestG = null;
+            for(int j = 0; j < bf.NStickers; j++)
+                field[j + pf2.FirstSticker] &= 0x7fff;
+            foreach(double[] G in bf.SMatrices) {
+                bool ok = true;
+                for(int i = 0; i < lstkseq; i++) {
+                    double[] v = PGeom.ApplyMatrix(G, bf.StickerMesh[macro[i] - pf1.FirstSticker].Ctr, Dim);
+                    if(!PGeom.VertEqual(v, bf.StickerMesh[stkseq[i] - pf2.FirstSticker].Ctr)) {
+                        ok = false; break;
+                    }
+                }
+                if(ok) {
+                    count++;
+                    if(lstkseq != mlen) {
+                        double[] v2 = PGeom.ApplyMatrix(G, bf.StickerMesh[macro[lstkseq] - pf1.FirstSticker].Ctr, Dim);
+                        int ns = -1;
+                        for(int k = 0; k < bf.NStickers; k++) {
+                            if(PGeom.VertEqual(v2, bf.StickerMesh[k].Ctr)) { ns = k; break; }
+                        }
+                        field[ns + pf2.FirstSticker] |= unchecked((short)0x8000);
+                    }
+                    bestG = G;
+                }
+            }
+            if(count == 1) {
+                // Convert 2D matrices to flat for computation
+                int d = Dim;
+                double[] m1 = new double[d * d];
+                double[] m2 = new double[d * d];
+                for(int ii = 0; ii < d; ii++)
+                    for(int jj = 0; jj < d; jj++) {
+                        m1[ii * d + jj] = pf1.Matrix[ii, jj];
+                        m2[ii * d + jj] = pf2.Matrix[ii, jj];
+                    }
+                double[] inv = PGeom.InvMatrix(m1, d);
+                matr = PGeom.ApplyMatrix(m2, PGeom.ApplyMatrix(bestG, inv, d), d);
+                return 2;
+            }
+            if(count != 0) return 1;
+            return 0;
+        }
+
+        internal string DebugInfo() {
+            string s = Name + ": Dim=" + Dim + " Axes=" + Axes.Count + " Faces=" + Faces.Count + " NStk=" + NStickers;
+            foreach(PBaseAxis ba in BaseAxes)
+                s += " | Axis " + ba.Id + " twists=" + ba.Twists.Length + " NPrim=" + ba.NPrimaryTwists;
+            return s;
+        }
 
         internal void DebugPrint(TextWriter tw) {
             tw.WriteLine("Name={0}",Name);
             tw.WriteLine("Dim={0}",Dim);
             tw.WriteLine("NStickers={0}",NStickers);
 
-            tw.Write("Group:");
-            foreach(double[] G in Group) PrintVec(G,tw,true);
+            tw.Write("Group: {0} matrices", Group.Count);
             tw.WriteLine();
             tw.WriteLine("Base Axes: {0}",BaseAxes.Length);
             foreach(PBaseAxis p in BaseAxes) p.DebugPrint(tw);
@@ -584,7 +736,7 @@ namespace _3dedit {
             double tbest=qexact ? 0.999999 : -1;
             int res=0;
             double ld=PGeom.DotProd(pt,pt);
-            for(int i=0;i<Axes.Length;i++) {
+            for(int i=0;i<Axes.Count;i++) {
                 double[] v=Axes[i].Dir;
                 double x=PGeom.DotProd(pt,v)/Math.Sqrt(ld*PGeom.DotProd(v,v));
                 if(x>tbest) {
@@ -599,7 +751,7 @@ namespace _3dedit {
 
         internal int FindFaceBySticker(int st) {
             int r=0;
-            while(r<Faces.Length && Faces[r].FirstSticker<=st) r++;
+            while(r<Faces.Count && Faces[r].FirstSticker<=st) r++;
             return r-1;
         }
         internal int BaseSticker(int st,int ax) {
@@ -618,11 +770,11 @@ namespace _3dedit {
             PAxis p=Axes[rax];
             int lv=ax>0 ? 0 : p.Base.NLayers-1;
             int[]L=p.Layers[lv],LB=p.Base.Layers[lv];
-            int ntw=p.Twists.Length;
-            int[] tws=new int[ntw*2];
-            int ntws=0;
-            for(int i=0;i<ntw;i++) {
-                int[] LT=p.Base.Twists[i].Map[lv];
+            int ntw = p.Base.Twists.Length;
+            int[] tws = new int[ntw * 2];
+            int ntws = 0;
+            for(int i = 0; i < ntw; i++) {
+                int[] LT = p.Base.Twists[i].Map[lv];
                 bool q=true,q1=true;
                 for(int a=0;a<lstkseq-1;a++) {
                     int h=stkseq[a],h1=stkseq[a+1];
@@ -721,20 +873,27 @@ _1: ;
             return R;
         }
 
-        internal double[,] GetBestMatrix(int f0,double[] p0,int f1,double[] p1) {
-            // move from (f0,p0) to (f1,p1); point p is on the cell surface.
-            PFace F0=Faces[f0],F1=Faces[f1];
-            if(F0.Base.Id!=F1.Base.Id) return null;
-            double[] q0=PGeom.ApplyInvMatrix(F0.Matrix,p0);
-            double[] q1=PGeom.ApplyInvMatrix(F1.Matrix,p1);
-            double dbest=double.MaxValue;
-            double[,] mr=null;
-            foreach(double[,] m in F0.Base.SMatrices) {
-                double[] qq=PGeom.ApplyMatrix(m,q0);
-                double v=PGeom.Dist2(qq,q1);
-                if(v<dbest) { dbest=v; mr=m; }
+        internal double[] GetBestMatrix(int f0, double[] p0, int f1, double[] p1) {
+            PFace pf0 = Faces[f0], pf1 = Faces[f1];
+            if(pf0.Base.Id != pf1.Base.Id) return null;
+            int d = Dim;
+            double[] m0 = new double[d * d], m1 = new double[d * d];
+            for(int ii = 0; ii < d; ii++)
+                for(int jj = 0; jj < d; jj++) {
+                    m0[ii * d + jj] = pf0.Matrix[ii, jj];
+                    m1[ii * d + jj] = pf1.Matrix[ii, jj];
+                }
+            double[] vec = PGeom.ApplyInvMatrix(m0, p0, d);
+            double[] b = PGeom.ApplyInvMatrix(m1, p1, d);
+            double bestDist = double.MaxValue;
+            double[] bestMatr = null;
+            foreach(double[] G in pf0.Base.SMatrices) {
+                double[] a = PGeom.ApplyMatrix(G, vec, d);
+                double dist = PGeom.Dist2(a, b);
+                if(dist < bestDist) { bestDist = dist; bestMatr = G; }
             }
-            return PGeom.MatrixMulInv2(F0.Matrix,PGeom.MatrixMul(mr,F1.Matrix));
+            double[] inv = PGeom.InvMatrix(m0, d);
+            return PGeom.ApplyMatrix(m1, PGeom.ApplyMatrix(bestMatr, inv, d), d);
         }
     }
 

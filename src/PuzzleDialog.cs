@@ -75,8 +75,8 @@ namespace _3dedit {
             try {
                 PuzzleStructure pstr = PuzzleStructure.Create(name, def);
                 // Success: show basic info
-                int nAxes = pstr.Axes.Length;
-                int nFaces = pstr.Faces.Length;
+                int nAxes = pstr.Axes.Count;
+                int nFaces = pstr.Faces.Count;
                 int nStickers = pstr.NStickers;
                 int dim = pstr.Dim;
                 string msg = string.Format("Puzzle \"{0}\" is valid!\n\nDim: {1}\nAxes: {2}\nFaces: {3}\nStickers: {4}",
