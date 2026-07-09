@@ -158,6 +158,13 @@ namespace _3dedit
             m_setgeom=false;
             ReadPuzzles("MPUlt_puzzles.txt");
             this.puzzleToolStripMenuItem.DropDownItems.AddRange(CreatePuzzleMenu(PuzzleList));
+
+            // Add "Cube Generator..." to the Custom menu
+            {
+                var miCubeGen = new ToolStripMenuItem("Cube Generator...");
+                miCubeGen.Click += new EventHandler(mi_CubeGen_Click);
+                this.customToolStripMenuItem.DropDownItems.Add(miCubeGen);
+            }
             LoadSettings("MPUlt_settings.txt");
             m_Timer=new System.Threading.Timer(this.UpdateTime,null,0,117);
 
@@ -2497,6 +2504,16 @@ namespace _3dedit
         }
 
         // ---- Custom Puzzle menu handlers ----
+
+        private void mi_CubeGen_Click(object sender, EventArgs e) {
+            using (CubeGenDialog dlg = new CubeGenDialog()) {
+                if (dlg.ShowDialog(this) == DialogResult.OK) {
+                    if (dlg.CreatedStructure != null) {
+                        NewScene(dlg.CreatedStructure);
+                    }
+                }
+            }
+        }
 
         private void mi_NewPuzzle_Click(object sender, EventArgs e) {
             string puzzleFile = FindPuzzleFilePath();
