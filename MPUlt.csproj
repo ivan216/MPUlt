@@ -156,6 +156,9 @@
     </Compile>
     <Compile Include="s3d\S4Camera.cs" />
     <Compile Include="src\CMacroFile.cs" />
+    <Compile Include="src\CubeGenDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="src\FaceCut.cs" />
     <Compile Include="src\ImportMC4D.cs" />
     <Compile Include="src\Puzzle.cs" />

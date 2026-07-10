@@ -244,7 +244,10 @@ namespace _3dedit {
             FPoles=new double[NF][];
             Stks=new StkMesh[NStk];
             BPln=new bool[NF];
-            int[] vn=new int[100000*4];
+            int maxVertPerFace=Cube.Str.Faces[0].Base.FaceMesh.NV;
+            int maxShare=Math.Min(maxVertPerFace,1<<Math.Max(0,Cube.Str.Dim-2));
+            int maxPairs=NF*(NF-1)/2;
+            int[] vn=new int[Math.Max(100000*4,maxPairs*maxShare*4)];
             lVN=0;
 
             double[][][] FFPoles=new double[NF][][];
@@ -347,6 +350,11 @@ namespace _3dedit {
 
         public void Render(S3DirectX d3dDevice) {
             int L=30000;
+            // Ensure buffer is big enough for the largest sticker mesh
+            foreach(StkMesh sm in Stks) {
+                int l2d=sm.L2D();
+                if(l2d>L) L=l2d;
+            }
             d3dDevice.Renderer.SetTransform(TransformType.World,Matrix.Identity);
             d3dDevice.SetupObjectMaterial(Color.FromArgb(unchecked((int)0x10404040)));
 

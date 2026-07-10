@@ -158,6 +158,13 @@ namespace _3dedit
             m_setgeom=false;
             ReadPuzzles("MPUlt_puzzles.txt");
             this.puzzleToolStripMenuItem.DropDownItems.AddRange(CreatePuzzleMenu(PuzzleList));
+
+            // Add polytope generator to the Custom menu
+            {
+                var miPuzzleGen = new ToolStripMenuItem("Generate Puzzle...");
+                miPuzzleGen.Click += new EventHandler(mi_CubeGen_Click);
+                this.customToolStripMenuItem.DropDownItems.Add(miPuzzleGen);
+            }
             LoadSettings("MPUlt_settings.txt");
             m_Timer=new System.Threading.Timer(this.UpdateTime,null,0,117);
 
@@ -1893,7 +1900,7 @@ namespace _3dedit
                 dxControl2.ClearMeshes();
                 CubeView=new CubeObj(Puz);
                 dxControl2.AddMesh(CubeView);
-                ((S4Camera)dxControl2.Scene.Camera).Init(Puz.Str.Dim,2);
+                ((S4Camera)dxControl2.Scene.Camera).Init(Puz.Str.Dim,Puz.Str.GetRad());
                 ApplyGeomSettings(); 
                 ShowCube(false);
 //                dxControl2.ParkCamera(true);
@@ -2497,6 +2504,16 @@ namespace _3dedit
         }
 
         // ---- Custom Puzzle menu handlers ----
+
+        private void mi_CubeGen_Click(object sender, EventArgs e) {
+            using (CubeGenDialog dlg = new CubeGenDialog()) {
+                if (dlg.ShowDialog(this) == DialogResult.OK) {
+                    if (dlg.CreatedStructure != null) {
+                        NewScene(dlg.CreatedStructure);
+                    }
+                }
+            }
+        }
 
         private void mi_NewPuzzle_Click(object sender, EventArgs e) {
             string puzzleFile = FindPuzzleFilePath();
