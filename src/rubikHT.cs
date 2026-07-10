@@ -159,11 +159,11 @@ namespace _3dedit
             ReadPuzzles("MPUlt_puzzles.txt");
             this.puzzleToolStripMenuItem.DropDownItems.AddRange(CreatePuzzleMenu(PuzzleList));
 
-            // Add "Cube Generator..." to the Custom menu
+            // Add polytope generator to the Custom menu
             {
-                var miCubeGen = new ToolStripMenuItem("Cube Generator...");
-                miCubeGen.Click += new EventHandler(mi_CubeGen_Click);
-                this.customToolStripMenuItem.DropDownItems.Add(miCubeGen);
+                var miPuzzleGen = new ToolStripMenuItem("Generate Puzzle...");
+                miPuzzleGen.Click += new EventHandler(mi_CubeGen_Click);
+                this.customToolStripMenuItem.DropDownItems.Add(miPuzzleGen);
             }
             LoadSettings("MPUlt_settings.txt");
             m_Timer=new System.Threading.Timer(this.UpdateTime,null,0,117);
