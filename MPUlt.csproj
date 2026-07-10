@@ -156,7 +156,9 @@
     </Compile>
     <Compile Include="s3d\S4Camera.cs" />
     <Compile Include="src\CMacroFile.cs" />
-    <Compile Include="src\CubeGenDialog.cs" />
+    <Compile Include="src\CubeGenDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="src\FaceCut.cs" />
     <Compile Include="src\ImportMC4D.cs" />
     <Compile Include="src\Puzzle.cs" />
@@ -236,6 +238,9 @@
       <Link>MPUlt_settings.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <EmbeddedResource Include="src\CubeGenDialog.resx">
+      <DependentUpon>CubeGenDialog.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="src\rubikHT.resx">
       <DependentUpon>rubikHT.cs</DependentUpon>
       <SubType>Designer</SubType>

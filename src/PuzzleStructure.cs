@@ -570,6 +570,7 @@ namespace _3dedit {
 					PuzzleStructure ps=null;
 					if(gen=="cube") ps=CreateCubeGenerated(dim,order);
 					else if(gen=="cross") ps=CreateCrossGenerated(dim,order);
+					else if(gen=="simplex") ps=CreateSimplexGenerated(dim,order);
 					else continue;
 					ps.Name=name;
 					return ps;
@@ -1129,7 +1130,7 @@ _1: ;
 		}
 
 		public static PuzzleStructure CreateCrossGenerated(int dim,int order) {
-			string name="Cross-"+dim+"_FT";
+			string name="Cross-"+dim+"_FT_"+order;
 			string[] def=BuildCrossDef(dim,order);
 			var ps=new PuzzleStructure();
 			ps.QGenerator="cross "+dim+" "+order;
@@ -1288,6 +1289,289 @@ _1: ;
 			F.StickerMesh[0]=stk;
 		}
 
+
+		// ---------------------------------------------------------------
+		//  Simplex Face-Turning Generator
+		// ---------------------------------------------------------------
+
+		private static string[] BuildSimplexDef(int dim,int order) {
+			var lines=new List<string>();
+			lines.Add("Dim "+dim);
+			lines.Add("NAxis 1");
+			var sb=new StringBuilder();
+			sb.Append("Faces 1");
+			for(int i=1;i<dim;i++) sb.Append(",1");
+			lines.Add(sb.ToString());
+			sb.Length=0;
+			sb.Append("Group");
+			double s=Math.Sqrt(dim+1);
+			for(int k=3;k<=dim;k++) {
+				sb.Append(" 2,-1");
+				for(int i=3;i<=dim;i++) sb.Append(i==k ? ",-1" : ",0");
+				sb.Append("/1,1");
+				for(int i=3;i<=dim;i++) sb.Append(i==k ? ",-2" : ",0");
+			}
+			sb.Append(" "+(3+2*s).ToString("F12",CultureInfo.InvariantCulture));
+			sb.Append(","+(-s).ToString("F12",CultureInfo.InvariantCulture));
+			for(int i=3;i<=dim;i++) sb.Append(",1");
+			sb.Append("/"+(3+s).ToString("F12",CultureInfo.InvariantCulture));
+			sb.Append(","+(3+s).ToString("F12",CultureInfo.InvariantCulture));
+			for(int i=3;i<=dim;i++) sb.Append(",2");
+			lines.Add(sb.ToString());
+			sb.Length=0;
+			sb.Append("Axis 1");
+			for(int i=1;i<dim;i++) sb.Append(",1");
+			lines.Add(sb.ToString());
+			sb.Length=0;
+			sb.Append("Twists");
+			if(dim==4) {
+				// 4D simplex needs an order-2 double transposition (1 2)(3 4)
+				// in addition to the order-3 face-stabilizing 3-cycles.
+				sb.Append(" 2,-1,-1,0/1,1,-2,0");
+				sb.Append(" 2,-1,0,-1/1,1,0,-2");
+				sb.Append(" 1,-1,0,0/0,0,1,-1");
+			} else {
+				for(int k=3;k<=dim;k++) {
+					sb.Append(" 2,-1");
+					for(int i=3;i<=dim;i++) sb.Append(i==k ? ",-1" : ",0");
+					sb.Append("/1,1");
+					for(int i=3;i<=dim;i++) sb.Append(i==k ? ",-2" : ",0");
+				}
+			}
+			lines.Add(sb.ToString());
+			sb.Length=0;
+			if(order<=1) {
+				lines.Add("Cuts");
+			} else {
+				sb.Append("Cuts");
+				for(int i=1;i<order;i++) {
+					double cut=1.0-(double)i*(dim+1)/order;
+					sb.Append(" "+cut.ToString("F12",CultureInfo.InvariantCulture));
+				}
+				lines.Add(sb.ToString());
+			}
+			return lines.ToArray();
+		}
+
+		public static PuzzleStructure CreateSimplexGenerated(int dim,int order) {
+			string name="Simplex-"+dim+"_FT_"+order;
+			string[] def=BuildSimplexDef(dim,order);
+			var ps=new PuzzleStructure();
+			ps.QGenerator="simplex "+dim+" "+order;
+			ps.Name=name;
+			ps.Dim=dim;
+			ps.FillFromStrings(def);
+			ps.ExpandAxes();
+			ps.ExpandFaces();
+			ps.GenSimplexFaces();
+			ps.EnumerateStickers();
+			ps.SortStickersForAxes();
+			ps.CreateTwistMaps();
+			return ps;
+		}
+
+		static double[] SolveLinearSystem(double[,] A,double[] b,int n) {
+			double[,] aug=new double[n,n+1];
+			for(int i=0;i<n;i++) {
+				for(int j=0;j<n;j++) aug[i,j]=A[i,j];
+				aug[i,n]=b[i];
+			}
+			for(int col=0;col<n;col++) {
+				int pivot=col;
+				for(int row=col+1;row<n;row++)
+					if(Math.Abs(aug[row,col])>Math.Abs(aug[pivot,col])) pivot=row;
+				if(Math.Abs(aug[pivot,col])<1e-12) return null;
+				if(pivot!=col) {
+					for(int j=col;j<=n;j++) {
+						double tmp=aug[col,j]; aug[col,j]=aug[pivot,j]; aug[pivot,j]=tmp;
+					}
+				}
+				for(int row=col+1;row<n;row++) {
+					double factor=aug[row,col]/aug[col,col];
+					for(int j=col;j<=n;j++) aug[row,j]-=factor*aug[col,j];
+				}
+			}
+			double[] x=new double[n];
+			for(int i=n-1;i>=0;i--) {
+				double sum=0;
+				for(int j=i+1;j<n;j++) sum+=aug[i,j]*x[j];
+				if(Math.Abs(aug[i,i])<1e-12) return null;
+				x[i]=(aug[i,n]-sum)/aug[i,i];
+			}
+			return x;
+		}
+
+		private bool IsSimplexSinglePiece(PBaseFace F) {
+			// Simplex face region along the axis spans from coefficient = 1
+			// (face plane) to -Dim (opposite vertex direction). A cut in
+			// (-Dim, 1) subdivides the face → not single-piece.
+			// Using |Pole| as threshold fails for dim≥6 where cut values
+			// exceed sqrt(dim).
+			foreach(PAxis Ax in Axes) {
+				foreach(double cut in Ax.Base.Cut) {
+					if(cut>-Dim+0.0001 && cut<1-0.0001) return false;
+				}
+			}
+			return true;
+		}
+
+		private void GenerateMinimalSimplexFace(PBaseFace F,double R) {
+			int dim=Dim;
+			double R2=R*R;
+			int nverts=dim;
+			int baseIdx=-1;
+			for(int i=0;i<Faces.Length;i++) {
+				if(PGeom.VertEqual(F.Pole,Faces[i].Pole)) { baseIdx=i; break; }
+			}
+			if(baseIdx<0) {
+				GenerateMinimalCrossFace(F,R);
+				return;
+			}
+			int[] otherIdxs=new int[dim];
+			int cnt=0;
+			for(int i=0;i<Faces.Length;i++) if(i!=baseIdx) otherIdxs[cnt++]=i;
+			LMesh m=new LMesh(Dim,true);
+			int[] vIdx=new int[nverts];
+			for(int vi=0;vi<dim;vi++) {
+				double[,] mat=new double[dim,dim];
+				double[] rhs=new double[dim];
+				int row=0;
+				for(int j=0;j<dim;j++) mat[row,j]=Faces[baseIdx].Pole[j];
+				rhs[row]=R2; row++;
+				for(int k=0;k<dim;k++) {
+					if(k==vi) continue;
+					int fidx=otherIdxs[k];
+					for(int j=0;j<dim;j++) mat[row,j]=Faces[fidx].Pole[j];
+					rhs[row]=R2; row++;
+				}
+				double[] pt=SolveLinearSystem(mat,rhs,dim);
+				if(pt==null) {
+					GenerateMinimalCrossFace(F,R);
+					return;
+				}
+				vIdx[vi]=m.AddPoint(pt,0);
+			}
+			for(int i=0;i<dim;i++) {
+				for(int j=i+1;j<dim;j++) m.AddSeg(vIdx[i],vIdx[j]);
+			}
+			for(int i=0;i<dim;i++) {
+				for(int j=i+1;j<dim;j++) {
+					for(int k=j+1;k<dim;k++) m.AddTrg(vIdx[i],vIdx[j],vIdx[k]);
+				}
+			}
+			m.CloseCtr();
+			F.FaceMesh=new PMesh(m);
+			F.FaceMesh.FCtr=F.Pole;
+			F.FPoles=new double[dim][];
+			for(int i=0;i<dim;i++) {
+				double[] p=new double[Dim];
+				p[i]=1;
+				F.FPoles[i]=p;
+			}
+			double[] vertCoords=m.pts;
+			int nVertCoords=m.npts;
+			F.AxisLayers=new int[Axes.Length];
+			int rnk=0;
+			for(int u=0;u<Axes.Length;u++) {
+				double[] D=Axes[u].Dir;
+				double lD=0;
+				for(int j=0;j<Dim;j++) lD+=D[j]*D[j];
+				double smax=double.MinValue,smin=double.MaxValue;
+				for(int i=0;i<nVertCoords;i++) {
+					double v=0;
+					for(int j=0;j<Dim;j++) v+=D[j]*vertCoords[i*Dim+j];
+					if(v<smin) smin=v;
+					if(v>smax) smax=v;
+				}
+				smin/=lD; smax/=lD;
+				int k=Axes[u].Base.NLayers-1;
+				bool cs=false;
+				for(int i=0;i<Axes[u].Base.Cut.Length;i++) {
+					double p=Axes[u].Base.Cut[i];
+					if(p>=smax-0.0001) continue;
+					if(!cs) { k=i; cs=true; }
+					if(p<=smin+0.0001) break;
+				}
+				F.AxisLayers[u]=k;
+				rnk+=Axes[u].Base.GetRank(k);
+			}
+			F.NCutAxes=0;
+			F.CutAxes=new int[0];
+			F.NStickers=1;
+			F.StickerMask=new byte[1,0];
+			F.StickerMesh=new PMesh[1];
+			PMesh stk=new PMesh(m);
+			stk.Rank=rnk;
+			stk.FCtr=F.Pole;
+			F.StickerMesh[0]=stk;
+		}
+
+		private void GenSimplexFaces() {
+			double R=0;
+			foreach(PBaseFace F in BaseFaces) R=Math.Max(R,PGeom.VLength(F.Pole));
+			int minrank=int.MaxValue;
+			foreach(PBaseFace F in BaseFaces) {
+				if(IsSimplexSinglePiece(F)) {
+					GenerateMinimalSimplexFace(F,R);
+					minrank=Math.Min(minrank,F.MinRank());
+					continue;
+				}
+				CutNode face=CutNode.GenCube(Dim,R*Dim);
+				double[] hpln=CutNetwork.GetPlane(F.Pole,1);
+				face.Split(1,hpln,false);
+				face=face.ZeroNode;
+				int opgen=1;
+				foreach(PFace FF in Faces) if(F.Id!=FF.Id) {
+					hpln=CutNetwork.GetPlane(FF.Pole,1);
+					face.Split(++opgen,hpln,true);
+					if(face.Status!=CutNode.STAT_PLUS) throw new Exception("Empty face: Id="+F.Id);
+				}
+				int nff=face.Children.Length;
+				double[][] ffpol=new double[nff][];
+				for(int i=0;i<nff;i++) ffpol[i]=face.Children[i].Pole;
+				F.FPoles=ffpol;
+				LMesh m=new LMesh(Dim,true);
+				face.FillLMesh(++opgen,m);
+				m.CloseCtr();
+				F.FaceMesh=new PMesh(m);
+				F.FaceMesh.FCtr=F.Pole;
+				double[] verts=m.pts;
+				int nverts=m.npts;
+				CutNetwork CN=new CutNetwork(face,Dim,opgen);
+				double[][] fctrs=null;
+				if(QSimplified) fctrs=CN.GetCtrs();
+				F.AxisLayers=new int[Axes.Length];
+				for(int u=0;u<Axes.Length;u++){
+					PAxis Ax=Axes[u];
+					double[] D=Ax.Dir;
+					double lD=PGeom.Dist2(D,new double[Dim]);
+					double smin=double.MaxValue,smax=double.MinValue;
+					for(int i=0;i<nverts;i++) {
+						double v=0;
+						for(int j=0;j<Dim;j++) v+=D[j]*verts[i*Dim+j];
+						if(v<smin) smin=v;
+						if(v>smax) smax=v;
+					}
+					smin/=lD; smax/=lD;
+					bool cs=false,cc=false;
+					int k=Ax.Base.NLayers-1;
+					for(int i=0;i<Ax.Base.Cut.Length;i++) {
+						double p=Ax.Base.Cut[i];
+						if(p>=smax-0.0001) continue;
+						if(!cs) { k=i; cs=true; }
+						if(p<=smin+0.0001) break;
+						hpln=CutNetwork.GetPlane(Ax.Dir,p);
+						CN.Split(hpln,false);
+						cc=true;
+					}
+					if(cc) { k=-1; }
+					F.AxisLayers[u]=k;
+				}
+				F.SetStickers(m,CN,Axes,fctrs);
+				minrank=Math.Min(minrank,F.MinRank());
+			}
+			foreach(PBaseFace F in BaseFaces) F.SubRank(minrank);
+		}
 	}
 
 	class PermByMatr {
