@@ -1900,7 +1900,7 @@ namespace _3dedit
                 dxControl2.ClearMeshes();
                 CubeView=new CubeObj(Puz);
                 dxControl2.AddMesh(CubeView);
-                ((S4Camera)dxControl2.Scene.Camera).Init(Puz.Str.Dim,2);
+                ((S4Camera)dxControl2.Scene.Camera).Init(Puz.Str.Dim,Puz.Str.GetRad());
                 ApplyGeomSettings(); 
                 ShowCube(false);
 //                dxControl2.ParkCamera(true);
