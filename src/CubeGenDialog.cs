@@ -109,8 +109,7 @@ namespace _3dedit {
         internal PuzzleStructure CreatedStructure;
 
         private void cmbType_SelectedIndexChanged(object sender, EventArgs e) {
-            // Cross-polytope has D-1 free dims for face → allow D up to 30
-            nudDim.Maximum = cmbType.SelectedIndex == 1 ? 30 : 15;
+            nudDim.Maximum = 15;
         }
 
         private void m_btnGen_Click(object sender, EventArgs e) {

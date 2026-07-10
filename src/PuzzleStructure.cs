@@ -559,13 +559,18 @@ namespace _3dedit {
 		internal static PuzzleStructure Create(string name,string[] descr) {
 			// Check for generator comment — allows loading generated .log files
 			// without going through GenCube (which OOMs at high dimensions).
-			// Format: #Generator: cube <dim> <order>
+			// Format: #Generator: <cube|cross> <dim> <order>
 			foreach(string ln in descr) {
-				if(ln.StartsWith("#Generator: cube")) {
+				if(ln.StartsWith("#Generator: ")) {
 					string[] parts=ln.Split(' ');
+					if(parts.Length<4) continue;
+					string gen=parts[1];
 					int dim=int.Parse(parts[2]);
 					int order=int.Parse(parts[3]);
-					var ps=CreateCubeGenerated(dim,order);
+					PuzzleStructure ps=null;
+					if(gen=="cube") ps=CreateCubeGenerated(dim,order);
+					else if(gen=="cross") ps=CreateCrossGenerated(dim,order);
+					else continue;
 					ps.Name=name;
 					return ps;
 				}
