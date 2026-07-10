@@ -238,9 +238,6 @@
       <Link>MPUlt_settings.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <EmbeddedResource Include="src\CubeGenDialog.resx">
-      <DependentUpon>CubeGenDialog.cs</DependentUpon>
-    </EmbeddedResource>
     <EmbeddedResource Include="src\rubikHT.resx">
       <DependentUpon>rubikHT.cs</DependentUpon>
       <SubType>Designer</SubType>
