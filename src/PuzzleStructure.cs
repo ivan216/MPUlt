@@ -98,7 +98,7 @@ namespace _3dedit {
 				sb.Append("Cuts");
 				for (int i = 0; i < order - 1; i++) {
 					double cut = 1.0 - 2.0 * (i + 1) / order;
-					sb.Append(" " + cut.ToString("F12", CultureInfo.InvariantCulture));
+					sb.Append(" " + FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}
@@ -523,7 +523,7 @@ namespace _3dedit {
 				for(int i=0;i<Ax.NPrimaryTwists;i++) sf+=" "+Twist2Text(Ax.Twists[i].Dir);
 				arr.Add(sf);
 				sf="Cuts";
-				foreach(double m in Ax.Cut) sf+=" "+m.ToString("F12",CultureInfo.InvariantCulture);
+				foreach(double m in Ax.Cut) sf+=" "+FormatNum(m);
 				arr.Add(sf);
 				if(Ax.FixedMask!=0) arr.Add("FixedMask "+Ax.FixedMask);
 			}
@@ -536,7 +536,7 @@ namespace _3dedit {
 			for(int i=0;i<2*d;i++) {
 				if(i==d) h+="/";
 				else if(i!=0) h+=",";
-				h+=G[i].ToString("F12",CultureInfo.InvariantCulture);
+				h+=FormatNum(G[i]);
 			}
 			return h;
 		}
@@ -546,9 +546,16 @@ namespace _3dedit {
 			int d=p.Length;
 			for(int i=0;i<d;i++) {
 				if(i!=0) h+=",";
-				h+=p[i].ToString("F12",CultureInfo.InvariantCulture);
+				h+=FormatNum(p[i]);
 			}
 			return h;
+		}
+
+		// Format a double value: integers as "N", floats as "F12".
+		static string FormatNum(double v) {
+			double r=Math.Round(v);
+			if(Math.Abs(v-r)<1e-10) return r.ToString(CultureInfo.InvariantCulture);
+			return v.ToString("F12",CultureInfo.InvariantCulture);
 		}
 
 		internal static PuzzleStructure ReadCompiled(string p) {
@@ -1122,7 +1129,7 @@ _1: ;
 				sb.Append("Cuts");
 				for(int i=0;i<order-1;i++) {
 					double cut=1.0-2.0*(i+1)/order;
-					sb.Append(" "+cut.ToString("F12",CultureInfo.InvariantCulture));
+					sb.Append(" "+FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}
@@ -1346,7 +1353,7 @@ _1: ;
 				sb.Append("Cuts");
 				for(int i=1;i<order;i++) {
 					double cut=1.0-(double)i*(dim+1)/order;
-					sb.Append(" "+cut.ToString("F12",CultureInfo.InvariantCulture));
+					sb.Append(" "+FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}
