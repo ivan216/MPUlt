@@ -558,6 +558,68 @@ namespace _3dedit {
 			return v.ToString("F12",CultureInfo.InvariantCulture);
 		}
 
+		// Lightweight validation: check field keyword order matches FillFromStrings'
+		// state machine without parsing values. First reads NAxis value to know
+		// how many (Axis→Twists→Cuts→[FixedMask]) cycles to expect.
+		internal static bool ValidateDefinitionFormat(string[] descr) {
+			if(descr==null || descr.Length==0) return false;
+			// Read NAxis value to determine cycle count.
+			int naxis=1;
+			for(int i=0;i<descr.Length;i++) {
+				string t=descr[i].Trim();
+				if(t.Length==0 || t[0]=='#') continue;
+				string[] sp=t.Split(' ','\t');
+				if(sp[0].ToLowerInvariant()=="naxis" && sp.Length>=2) {
+					if(!int.TryParse(sp[1],out naxis) || naxis<1)
+						return false;
+					break;
+				}
+			}
+			// Validate keyword order.
+			// 0=Dim,1=NAxis,2=Faces,3=Group,4=Axis,5=Twists,6=Cuts,7=afterCuts,8=done
+			int state=0,axisCnt=0;
+			bool afterCuts=false;
+			for(int i=0;i<descr.Length;i++) {
+				string t=descr[i].Trim();
+				if(t.Length==0 || t[0]=='#') continue;
+				string cmd=t.Split(' ','\t')[0].ToLowerInvariant();
+				if(state==0) {
+					if(cmd!="dim") return false;
+					state=1;
+				} else if(state==1) {
+					if(cmd!="naxis") return false;
+					state=2;
+				} else if(state==2) {
+					if(cmd!="faces") return false;
+					state=3;
+				} else if(state==3) {
+					if(cmd=="simplified") continue;
+					if(cmd!="group") return false;
+					state=4;
+				} else if(state==4) {
+					if(cmd!="axis") return false;
+					axisCnt++; state=5;
+				} else if(state==5) {
+					if(cmd!="twists") return false;
+					state=6;
+				} else if(state==6) {
+					if(cmd!="cuts") return false;
+					afterCuts=true;
+					state=axisCnt<naxis ? 7 : 8;
+				} else if(state==7) {
+					// Between axes: FixedMask → stay, Axis → next cycle
+					if(cmd=="fixedmask") continue;
+					if(cmd=="axis") { axisCnt++; state=5; continue; }
+					return false;
+				} else if(state==8) {
+					// After all axes: only optional FixedMask
+					if(cmd=="fixedmask") continue;
+					return false;
+				}
+			}
+			return afterCuts && axisCnt==naxis;
+		}
+
 		internal static PuzzleStructure ReadCompiled(string p) {
 			return null;
 			//throw new NotImplementedException();

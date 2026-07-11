@@ -96,7 +96,7 @@ namespace _3dedit {
 
         private void m_btnGenSave_Click(object sender, EventArgs e) {
             LoadAfterSave = true;
-            if (DoSave()) {
+            if (DoSave(true)) {
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -104,7 +104,7 @@ namespace _3dedit {
 
         private void m_btnSaveOnly_Click(object sender, EventArgs e) {
             LoadAfterSave = false;
-            if (DoSave()) {
+            if (DoSave(false)) {
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -140,7 +140,7 @@ namespace _3dedit {
 
         // ---- Helpers ----
 
-        bool DoSave() {
+        bool DoSave(bool fullValidation) {
             string name = PuzzleName;
             string[] def = DefinitionLines;
             string blockPath = BlockPath;
@@ -154,14 +154,24 @@ namespace _3dedit {
                 return false;
             }
 
-            // Validate puzzle structure first
-            PuzzleStructure pstr = null;
-            try {
-                pstr = PuzzleStructure.Create(name, def);
-            } catch (Exception ex) {
-                MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            // Lightweight: validate definition format only (parses Dim/NAxis/Faces/Group/Axis/Twists/Cuts).
+            if (!PuzzleStructure.ValidateDefinitionFormat(def)) {
+                MessageBox.Show(this, "Invalid puzzle definition format — check syntax.\n" +
+                    "Required: Dim, NAxis, Faces, Group, Axis, Twists, Cuts",
+                    "Format Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
+            }
+
+            PuzzleStructure pstr = null;
+            if (fullValidation) {
+                // Full validation: try to actually create the puzzle structure.
+                try {
+                    pstr = PuzzleStructure.Create(name, def);
+                } catch (Exception ex) {
+                    MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
+                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
+                }
             }
 
             // Check for duplicate name in the same block
