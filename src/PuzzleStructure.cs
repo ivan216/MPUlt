@@ -8,7 +8,7 @@ using System.IO;
 
 namespace _3dedit {
 	class PuzzleStructure {
-		const int MaxNVert=14400,MaxNAxes=1320;
+		const int MaxNVert=131072,MaxNAxes=4096;
 
 		internal string Name;
 		internal int Dim;
