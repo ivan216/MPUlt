@@ -98,7 +98,7 @@ namespace _3dedit {
 				sb.Append("Cuts");
 				for (int i = 0; i < order - 1; i++) {
 					double cut = 1.0 - 2.0 * (i + 1) / order;
-					sb.Append(" " + cut.ToString("F12", CultureInfo.InvariantCulture));
+					sb.Append(" " + FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}
@@ -523,7 +523,7 @@ namespace _3dedit {
 				for(int i=0;i<Ax.NPrimaryTwists;i++) sf+=" "+Twist2Text(Ax.Twists[i].Dir);
 				arr.Add(sf);
 				sf="Cuts";
-				foreach(double m in Ax.Cut) sf+=" "+m.ToString("F12",CultureInfo.InvariantCulture);
+				foreach(double m in Ax.Cut) sf+=" "+FormatNum(m);
 				arr.Add(sf);
 				if(Ax.FixedMask!=0) arr.Add("FixedMask "+Ax.FixedMask);
 			}
@@ -536,7 +536,7 @@ namespace _3dedit {
 			for(int i=0;i<2*d;i++) {
 				if(i==d) h+="/";
 				else if(i!=0) h+=",";
-				h+=G[i].ToString("F12",CultureInfo.InvariantCulture);
+				h+=FormatNum(G[i]);
 			}
 			return h;
 		}
@@ -546,9 +546,78 @@ namespace _3dedit {
 			int d=p.Length;
 			for(int i=0;i<d;i++) {
 				if(i!=0) h+=",";
-				h+=p[i].ToString("F12",CultureInfo.InvariantCulture);
+				h+=FormatNum(p[i]);
 			}
 			return h;
+		}
+
+		// Format a double value: integers as "N", floats as "F12".
+		static string FormatNum(double v) {
+			double r=Math.Round(v);
+			if(Math.Abs(v-r)<1e-10) return r.ToString(CultureInfo.InvariantCulture);
+			return v.ToString("F12",CultureInfo.InvariantCulture);
+		}
+
+		// Lightweight validation: check field keyword order matches FillFromStrings'
+		// state machine without parsing values. First reads NAxis value to know
+		// how many (Axis→Twists→Cuts→[FixedMask]) cycles to expect.
+		internal static bool ValidateDefinitionFormat(string[] descr) {
+			if(descr==null || descr.Length==0) return false;
+			// Read NAxis value to determine cycle count.
+			int naxis=1;
+			for(int i=0;i<descr.Length;i++) {
+				string t=descr[i].Trim();
+				if(t.Length==0 || t[0]=='#') continue;
+				string[] sp=t.Split(' ','\t');
+				if(sp[0].ToLowerInvariant()=="naxis" && sp.Length>=2) {
+					if(!int.TryParse(sp[1],out naxis) || naxis<1)
+						return false;
+					break;
+				}
+			}
+			// Validate keyword order.
+			// 0=Dim,1=NAxis,2=Faces,3=Group,4=Axis,5=Twists,6=Cuts,7=afterCuts,8=done
+			int state=0,axisCnt=0;
+			bool afterCuts=false;
+			for(int i=0;i<descr.Length;i++) {
+				string t=descr[i].Trim();
+				if(t.Length==0 || t[0]=='#') continue;
+				string cmd=t.Split(' ','\t')[0].ToLowerInvariant();
+				if(state==0) {
+					if(cmd!="dim") return false;
+					state=1;
+				} else if(state==1) {
+					if(cmd!="naxis") return false;
+					state=2;
+				} else if(state==2) {
+					if(cmd!="faces") return false;
+					state=3;
+				} else if(state==3) {
+					if(cmd=="simplified") continue;
+					if(cmd!="group") return false;
+					state=4;
+				} else if(state==4) {
+					if(cmd!="axis") return false;
+					axisCnt++; state=5;
+				} else if(state==5) {
+					if(cmd!="twists") return false;
+					state=6;
+				} else if(state==6) {
+					if(cmd!="cuts") return false;
+					afterCuts=true;
+					state=axisCnt<naxis ? 7 : 8;
+				} else if(state==7) {
+					// Between axes: FixedMask → stay, Axis → next cycle
+					if(cmd=="fixedmask") continue;
+					if(cmd=="axis") { axisCnt++; state=5; continue; }
+					return false;
+				} else if(state==8) {
+					// After all axes: only optional FixedMask
+					if(cmd=="fixedmask") continue;
+					return false;
+				}
+			}
+			return afterCuts && axisCnt==naxis;
 		}
 
 		internal static PuzzleStructure ReadCompiled(string p) {
@@ -1122,7 +1191,7 @@ _1: ;
 				sb.Append("Cuts");
 				for(int i=0;i<order-1;i++) {
 					double cut=1.0-2.0*(i+1)/order;
-					sb.Append(" "+cut.ToString("F12",CultureInfo.InvariantCulture));
+					sb.Append(" "+FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}
@@ -1346,7 +1415,7 @@ _1: ;
 				sb.Append("Cuts");
 				for(int i=1;i<order;i++) {
 					double cut=1.0-(double)i*(dim+1)/order;
-					sb.Append(" "+cut.ToString("F12",CultureInfo.InvariantCulture));
+					sb.Append(" "+FormatNum(cut));
 				}
 				lines.Add(sb.ToString());
 			}

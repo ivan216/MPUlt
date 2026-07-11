@@ -74,6 +74,9 @@ namespace _3dedit {
             }
             try {
                 PuzzleStructure pstr = PuzzleStructure.Create(name, def);
+                // Cache for reuse by Generate & Save
+                m_cachedDef = (string[])def.Clone();
+                m_cachedStructure = pstr;
                 // Success: show basic info
                 int nAxes = pstr.Axes.Length;
                 int nFaces = pstr.Faces.Length;
@@ -96,7 +99,7 @@ namespace _3dedit {
 
         private void m_btnGenSave_Click(object sender, EventArgs e) {
             LoadAfterSave = true;
-            if (DoSave()) {
+            if (DoSave(true)) {
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -104,7 +107,7 @@ namespace _3dedit {
 
         private void m_btnSaveOnly_Click(object sender, EventArgs e) {
             LoadAfterSave = false;
-            if (DoSave()) {
+            if (DoSave(false)) {
                 DialogResult = DialogResult.OK;
                 Close();
             }
@@ -140,7 +143,7 @@ namespace _3dedit {
 
         // ---- Helpers ----
 
-        bool DoSave() {
+        bool DoSave(bool fullValidation) {
             string name = PuzzleName;
             string[] def = DefinitionLines;
             string blockPath = BlockPath;
@@ -154,14 +157,28 @@ namespace _3dedit {
                 return false;
             }
 
-            // Validate puzzle structure first
-            PuzzleStructure pstr = null;
-            try {
-                pstr = PuzzleStructure.Create(name, def);
-            } catch (Exception ex) {
-                MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            // Lightweight: validate definition format only (parses Dim/NAxis/Faces/Group/Axis/Twists/Cuts).
+            if (!PuzzleStructure.ValidateDefinitionFormat(def)) {
+                MessageBox.Show(this, "Invalid puzzle definition format — check syntax.\n" +
+                    "Required: Dim, NAxis, Faces, Group, Axis, Twists, Cuts",
+                    "Format Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
+            }
+
+            PuzzleStructure pstr = null;
+            if (fullValidation) {
+                // Reuse cached structure if definition hasn't changed since Test.
+                if (m_cachedDef != null && ArraysEqual(m_cachedDef, def)) {
+                    pstr = m_cachedStructure;
+                } else {
+                    try {
+                        pstr = PuzzleStructure.Create(name, def);
+                    } catch (Exception ex) {
+                        MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return false;
+                    }
+                }
             }
 
             // Check for duplicate name in the same block
@@ -200,5 +217,16 @@ namespace _3dedit {
         // The created PuzzleStructure, for the caller to load
         internal PuzzleStructure CreatedStructure { get { return m_createdStructure; } }
         PuzzleStructure m_createdStructure = null;
+
+        // Test-result cache: reuse when definition hasn't changed.
+        string[] m_cachedDef = null;
+        PuzzleStructure m_cachedStructure = null;
+
+        static bool ArraysEqual(string[] a, string[] b) {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
+        }
     }
 }
