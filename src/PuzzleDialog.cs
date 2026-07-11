@@ -74,6 +74,9 @@ namespace _3dedit {
             }
             try {
                 PuzzleStructure pstr = PuzzleStructure.Create(name, def);
+                // Cache for reuse by Generate & Save
+                m_cachedDef = (string[])def.Clone();
+                m_cachedStructure = pstr;
                 // Success: show basic info
                 int nAxes = pstr.Axes.Length;
                 int nFaces = pstr.Faces.Length;
@@ -164,13 +167,17 @@ namespace _3dedit {
 
             PuzzleStructure pstr = null;
             if (fullValidation) {
-                // Full validation: try to actually create the puzzle structure.
-                try {
-                    pstr = PuzzleStructure.Create(name, def);
-                } catch (Exception ex) {
-                    MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
-                        "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    return false;
+                // Reuse cached structure if definition hasn't changed since Test.
+                if (m_cachedDef != null && ArraysEqual(m_cachedDef, def)) {
+                    pstr = m_cachedStructure;
+                } else {
+                    try {
+                        pstr = PuzzleStructure.Create(name, def);
+                    } catch (Exception ex) {
+                        MessageBox.Show(this, "Puzzle creation failed — not saved.\n" + ex.Message,
+                            "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return false;
+                    }
                 }
             }
 
@@ -210,5 +217,16 @@ namespace _3dedit {
         // The created PuzzleStructure, for the caller to load
         internal PuzzleStructure CreatedStructure { get { return m_createdStructure; } }
         PuzzleStructure m_createdStructure = null;
+
+        // Test-result cache: reuse when definition hasn't changed.
+        string[] m_cachedDef = null;
+        PuzzleStructure m_cachedStructure = null;
+
+        static bool ArraysEqual(string[] a, string[] b) {
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i] != b[i]) return false;
+            return true;
+        }
     }
 }
