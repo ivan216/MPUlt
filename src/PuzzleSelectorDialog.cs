@@ -129,11 +129,10 @@ namespace _3dedit {
             if (DeleteRequested != null)
                 DeleteRequested(name, entry.Value.BlockPath);
 
-            // Remove from tree
+            // Remove from tree; TreeView auto-selects next sibling and
+            // fires AfterSelect which re-evaluates button state.
             TreeNode sel = treePuzzles.SelectedNode;
             treePuzzles.Nodes.Remove(sel);
-            m_btnDelete.Enabled = false;
-            m_btnMove.Enabled = false;
         }
 
         private void m_btnMove_Click(object sender, EventArgs e) {
