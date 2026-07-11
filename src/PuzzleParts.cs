@@ -47,7 +47,7 @@ namespace _3dedit {
         }
 
         internal void ExpandPrimaryTwists() {
-            const int MaxNTwists=256;
+            const int MaxNTwists=2048;
             NPrimaryTwists=Twists.Length;
             PBaseTwist[] twst=new PBaseTwist[MaxNTwists];
             int q=0;
